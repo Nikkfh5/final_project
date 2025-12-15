@@ -1,0 +1,33 @@
+# Tracker configuration parameters
+
+# Frame names
+world_frame: "world"
+camera_frame: "camera_link"
+
+# Ground plane z coordinate
+ground_z: 0.0
+
+# Input topics
+image_topic: "/camera/image_raw"
+camera_info_topic: "/camera/camera_info"
+
+# Output topics
+pose_topic: "/robot_pose_external"
+path_topic: "/robot_path_external"
+debug_image_topic: "/debug/image"
+
+# HSV color thresholds for markers
+# Red marker (head)
+red_hsv:
+  lower: [0, 100, 100]    # TODO: Tune these values based on actual camera output
+  upper: [10, 255, 255]
+
+# Blue marker (tail)
+blue_hsv:
+  lower: [100, 100, 100]  # TODO: Tune these values based on actual camera output
+  upper: [130, 255, 255]
+
+# Processing parameters
+min_contour_area: 50  # Minimum area for marker detection (pixels)
+max_contour_area: 10000  # Maximum area for marker detection (pixels)
+

@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Load configuration parameters -->
+  <rosparam file="$(find tracker_pkg)/config/tracker.yaml" command="load"/>
+
+  <!-- Tracker node -->
+  <node name="tracker_node" pkg="tracker_pkg" type="tracker_node.py" output="screen">
+    <rosparam file="$(find tracker_pkg)/config/tracker.yaml" command="load"/>
+  </node>
+</launch>
+

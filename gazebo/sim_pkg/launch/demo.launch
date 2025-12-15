@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Launch simulation -->
+  <include file="$(find sim_pkg)/launch/sim.launch"/>
+  
+  <!-- Wait a bit for simulation to start -->
+  <arg name="wait_time" value="3"/>
+  <node name="wait_for_sim" pkg="rospy_tutorials" type="talker" output="screen" if="false"/>
+  
+  <!-- Launch tracker -->
+  <include file="$(find tracker_pkg)/launch/tracker.launch"/>
+  
+  <!-- Launch RViz with config -->
+  <node name="rviz" pkg="rviz" type="rviz" 
+        args="-d $(find tracker_pkg)/rviz/tracker.rviz" 
+        output="screen" required="false"/>
+  
+  <!-- Expected topics after launch:
+       /camera/image_raw
+       /camera/camera_info
+       /robot_pose_external
+       /robot_path_external
+       /debug/image
+  -->
+</launch>
+

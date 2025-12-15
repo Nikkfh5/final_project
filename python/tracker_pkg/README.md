@@ -1,0 +1,144 @@
+# Tracker Package (tracker_pkg)
+
+Этот пакет содержит Python-алгоритм для трекинга робота по внешней камере с использованием цветных меток.
+
+## Что делает Python team
+
+1. **Подписывается на топики камеры**:
+   - `/camera/image_raw` (sensor_msgs/Image)
+   - `/camera/camera_info` (sensor_msgs/CameraInfo)
+
+2. **Детектирует цветные метки** (красная и синяя) используя OpenCV:
+   - Конвертация в HSV цветовое пространство
+   - Пороговая фильтрация
+   - Морфологические операции
+   - Поиск центроидов контуров
+
+3. **Вычисляет мировые координаты**:
+   - Получает позу камеры через TF (world -> camera_link)
+   - Использует camera intrinsics для unproject пикселей
+   - Пересекает лучи с плоскостью пола (z = ground_z)
+
+4. **Вычисляет позу робота**:
+   - Центр = середина между метками
+   - Yaw = atan2(tail - head)
+
+5. **Публикует результаты**:
+   - `/robot_pose_external` (geometry_msgs/PoseStamped) - текущая поза
+   - `/robot_path_external` (nav_msgs/Path) - траектория
+   - `/debug/image` (sensor_msgs/Image) - изображение с отрисованными метками
+
+## Как запускать
+
+### С живой симуляцией
+
+1. **Запустить симуляцию** (в отдельном терминале):
+   ```bash
+   roslaunch sim_pkg sim.launch
+   ```
+
+2. **Запустить трекер**:
+   ```bash
+   roslaunch tracker_pkg tracker.launch
+   ```
+
+Или использовать единый demo launch:
+```bash
+roslaunch sim_pkg demo.launch
+```
+
+### Проверка работы
+
+1. **Проверить топики**:
+   ```bash
+   rostopic list
+   # Должны появиться:
+   # /robot_pose_external
+   # /robot_path_external
+   # /debug/image
+   ```
+
+2. **Посмотреть текущую позу**:
+   ```bash
+   rostopic echo /robot_pose_external
+   ```
+
+3. **Посмотреть траекторию**:
+   ```bash
+   rostopic echo /robot_path_external
+   ```
+
+4. **Визуализация в rviz**:
+   ```bash
+   rosrun rviz rviz -d $(rospack find tracker_pkg)/rviz/tracker.rviz
+   ```
+   
+   Или вручную добавить:
+   - Path display: `/robot_path_external`
+   - Pose display: `/robot_pose_external` (или использовать TF)
+
+5. **Посмотреть debug изображение**:
+   ```bash
+   rqt_image_view /debug/image
+   ```
+
+### Работа с rosbag (TODO)
+
+Если нужно протестировать на записи:
+
+1. **Записать данные**:
+   ```bash
+   rosbag record /camera/image_raw /camera/camera_info /tf /tf_static
+   ```
+
+2. **Воспроизвести**:
+   ```bash
+   rosbag play your_bag.bag --clock
+   roslaunch tracker_pkg tracker.launch use_sim_time:=true
+   ```
+
+## Конфигурация
+
+Параметры настраиваются в `config/tracker.yaml`:
+
+- **HSV пороги** для красной и синей метки (нужно подобрать экспериментально)
+- **Минимальная/максимальная площадь контура** для фильтрации шума
+- **Имена топиков** и фреймов
+- **Z координата плоскости пола** (по умолчанию 0.0)
+
+## Оффлайн визуализация
+
+Для просмотра сохраненной траектории:
+
+```bash
+python $(rospack find tracker_pkg)/scripts/offline_visualizer.py trajectory.csv
+```
+
+Формат CSV: `t, x, y, theta` (один ряд на одну точку)
+
+TODO: Добавить поддержку JSON формата и интерактивных функций.
+
+## Алгоритм преобразования координат
+
+1. **Unproject пикселя в луч камеры**:
+   - Используем camera intrinsics (K матрица)
+   - Получаем направление луча в системе координат камеры
+
+2. **Преобразование луча в мировую систему**:
+   - Получаем transform world -> camera_link через TF
+   - Поворачиваем направление луча используя rotation из transform
+   - Получаем позицию камеры в мире из translation
+
+3. **Пересечение с плоскостью пола**:
+   - Решаем уравнение: camera_z + t * ray_dir_z = ground_z
+   - Получаем точку пересечения в мировой системе координат
+
+## TODO для Python team
+
+- [ ] Подобрать оптимальные HSV пороги для меток
+- [ ] Настроить фильтры морфологии для стабильной детекции
+- [ ] Добавить проверку на минимальное расстояние между метками
+- [ ] Реализовать интерполяцию при пропадании меток
+- [ ] Добавить экспорт траектории в CSV/JSON
+- [ ] Улучшить offline visualizer (интерактивный ползунок, клики)
+
