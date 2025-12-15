@@ -1,0 +1,122 @@
+<?xml version="1.0"?>
+<sdf version="1.4">
+  <model name="robot_with_markers">
+    <!-- Main robot body (simple box) -->
+    <link name="base_link">
+      <collision name="collision">
+        <geometry>
+          <box>
+            <size>0.3 0.3 0.2</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name="visual">
+        <geometry>
+          <box>
+            <size>0.3 0.3 0.2</size>
+          </box>
+        </geometry>
+        <material>
+          <script>
+            <name>Gazebo/Grey</name>
+            <uri>file://media/materials/scripts/gazebo.material</uri>
+          </script>
+        </material>
+      </visual>
+      <inertial>
+        <mass>1.0</mass>
+        <inertia>
+          <ixx>0.01</ixx>
+          <iyy>0.01</iyy>
+          <izz>0.01</izz>
+        </inertia>
+      </inertial>
+    </link>
+
+    <!-- Red marker (head/front) -->
+    <link name="red_marker_link">
+      <visual name="red_marker_visual">
+        <pose>0.2 0 0.1 0 0 0</pose> <!-- TODO: Adjust position relative to robot center -->
+        <geometry>
+          <cylinder>
+            <radius>0.05</radius>
+            <length>0.02</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <script>
+            <name>Gazebo/Red</name>
+            <uri>file://media/materials/scripts/gazebo.material</uri>
+          </script>
+        </material>
+      </visual>
+      <collision name="red_marker_collision">
+        <pose>0.2 0 0.1 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.05</radius>
+            <length>0.02</length>
+          </cylinder>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass>0.01</mass>
+        <inertia>
+          <ixx>0.0001</ixx>
+          <iyy>0.0001</iyy>
+          <izz>0.0001</izz>
+        </inertia>
+      </inertial>
+    </link>
+
+    <!-- Blue marker (tail/back) -->
+    <link name="blue_marker_link">
+      <visual name="blue_marker_visual">
+        <pose>-0.2 0 0.1 0 0 0</pose> <!-- TODO: Adjust position relative to robot center -->
+        <geometry>
+          <cylinder>
+            <radius>0.05</radius>
+            <length>0.02</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <script>
+            <name>Gazebo/Blue</name>
+            <uri>file://media/materials/scripts/gazebo.material</uri>
+          </script>
+        </material>
+      </visual>
+      <collision name="blue_marker_collision">
+        <pose>-0.2 0 0.1 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.05</radius>
+            <length>0.02</length>
+          </cylinder>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass>0.01</mass>
+        <inertia>
+          <ixx>0.0001</ixx>
+          <iyy>0.0001</iyy>
+          <izz>0.0001</izz>
+        </inertia>
+      </inertial>
+    </link>
+
+    <!-- Joints connecting markers to base -->
+    <joint name="red_marker_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>red_marker_link</child>
+    </joint>
+
+    <joint name="blue_marker_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>blue_marker_link</child>
+    </joint>
+
+    <!-- TODO: Add plugin for robot control if needed (e.g., differential drive) -->
+  </model>
+</sdf>
+
