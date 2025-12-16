@@ -51,10 +51,10 @@ morph_kernel_size: 5   # Morphology kernel size in pixels
 
 # Fallback based on raw BGR dominance (helps in Gazebo lighting)
 enable_channel_fallback: true
-red_channel_min: 80
-red_channel_margin: 40
-blue_channel_min: 80
-blue_channel_margin: 40
+red_channel_min: 60
+red_channel_margin: 10
+blue_channel_min: 60
+blue_channel_margin: 10
 enable_circle_fallback: true
 circle_min_radius: 5
 circle_max_radius: 80
@@ -62,7 +62,7 @@ circle_min_distance: 30
 circle_dp: 1.2
 circle_param1: 100
 circle_param2: 15
-circle_color_margin: 20
+circle_color_margin: 5
 circle_blur_kernel: 7
 
 # Frame skipping (process every N-th frame, 1 = process every frame)

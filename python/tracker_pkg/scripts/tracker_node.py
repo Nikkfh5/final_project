@@ -67,10 +67,10 @@ class TrackerNode:
             default_upper=[140, 255, 255]
         )
         self.enable_channel_fallback = rospy.get_param('~enable_channel_fallback', True)
-        self.red_channel_min = rospy.get_param('~red_channel_min', 80)
-        self.red_channel_margin = rospy.get_param('~red_channel_margin', 40)
-        self.blue_channel_min = rospy.get_param('~blue_channel_min', 80)
-        self.blue_channel_margin = rospy.get_param('~blue_channel_margin', 40)
+        self.red_channel_min = rospy.get_param('~red_channel_min', 60)
+        self.red_channel_margin = rospy.get_param('~red_channel_margin', 10)
+        self.blue_channel_min = rospy.get_param('~blue_channel_min', 60)
+        self.blue_channel_margin = rospy.get_param('~blue_channel_margin', 10)
         self.enable_circle_fallback = rospy.get_param('~enable_circle_fallback', True)
         self.circle_min_radius = rospy.get_param('~circle_min_radius', 5)
         self.circle_max_radius = rospy.get_param('~circle_max_radius', 80)
@@ -78,7 +78,7 @@ class TrackerNode:
         self.circle_dp = rospy.get_param('~circle_dp', 1.2)
         self.circle_param1 = rospy.get_param('~circle_param1', 100)
         self.circle_param2 = rospy.get_param('~circle_param2', 15)
-        self.circle_color_margin = rospy.get_param('~circle_color_margin', 20)
+        self.circle_color_margin = rospy.get_param('~circle_color_margin', 5)
         self.circle_blur_kernel = rospy.get_param('~circle_blur_kernel', 7)
         
         self.min_contour_area = rospy.get_param('~min_contour_area', 50)
@@ -264,27 +264,38 @@ class TrackerNode:
         results = {}
         if circles is None:
             return results
-
+        
         h, w = cv_image.shape[:2]
         best_scores = {'red': (-np.inf, None), 'blue': (-np.inf, None)}
-
+        best_means = {'red': None, 'blue': None}
+        
         for circle in np.round(circles[0, :]).astype(int):
             x, y, r = circle
             if x < 0 or y < 0 or x >= w or y >= h:
                 continue
-            b, g, r_val = cv_image[y, x]
-            red_diff = int(r_val) - int(max(g, b))
-            blue_diff = int(b) - int(max(r_val, g))
+            mask = np.zeros((h, w), dtype=np.uint8)
+            cv2.circle(mask, (x, y), r, 255, -1)
+            mean_bgr = cv2.mean(cv_image, mask=mask)[:3]
+            b, g, r_val = mean_bgr
+            red_diff = float(r_val) - float(max(g, b))
+            blue_diff = float(b) - float(max(r_val, g))
 
             if red_diff > best_scores['red'][0]:
                 best_scores['red'] = (red_diff, (x, y))
+                best_means['red'] = mean_bgr
             if blue_diff > best_scores['blue'][0]:
                 best_scores['blue'] = (blue_diff, (x, y))
+                best_means['blue'] = mean_bgr
 
         for color in ('red', 'blue'):
             diff, center = best_scores[color]
             if center is not None and diff >= self.circle_color_margin:
                 results[color] = center
+            else:
+                if center is not None:
+                    rospy.logdebug("Circle %s candidate rejected diff=%.2f < %.2f, mean=%s",
+                                   color, diff, self.circle_color_margin,
+                                   np.round(best_means[color], 2) if best_means[color] is not None else None)
 
         return results
     
