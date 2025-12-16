@@ -273,7 +273,15 @@ class TrackerNode:
             return
         
         # Detect markers
+        # Красный цвет в HSV может быть около 0 или около 180 (циклический диапазон)
+        # Пробуем оба диапазона для красного
         red_center = self.detect_marker(cv_image, self.red_lower, self.red_upper)
+        if red_center is None:
+            # Пробуем второй диапазон для красного (170-180)
+            red_lower2 = np.array([170, self.red_lower[1], self.red_lower[2]])
+            red_upper2 = np.array([180, self.red_upper[1], self.red_upper[2]])
+            red_center = self.detect_marker(cv_image, red_lower2, red_upper2)
+        
         blue_center = self.detect_marker(cv_image, self.blue_lower, self.blue_upper)
         
         # Debug image

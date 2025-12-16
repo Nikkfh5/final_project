@@ -27,17 +27,21 @@ log_file: "~/tracker_logs/trajectory.csv"
 
 # HSV color thresholds for markers
 # Red marker (head)
+# Красный в HSV может быть около 0 или около 180 (циклический диапазон)
+# Используем более широкие пороги для Gazebo цветов
 red_hsv:
-  lower: [0, 100, 100]    # TODO: Tune these values based on actual camera output
+  lower: [0, 50, 50]    # Более широкий диапазон для красного
   upper: [10, 255, 255]
 
 # Blue marker (tail)
+# Синий обычно в диапазоне 100-130, но может быть менее насыщенным в Gazebo
 blue_hsv:
-  lower: [100, 100, 100]  # TODO: Tune these values based on actual camera output
+  lower: [100, 50, 50]  # Снижаем пороги насыщенности и яркости
   upper: [130, 255, 255]
 
 # Processing parameters
-min_contour_area: 50  # Minimum area for marker detection (pixels)
+# Уменьшаем минимальную площадь, так как метки могут быть маленькими на изображении
+min_contour_area: 20  # Minimum area for marker detection (pixels)
 max_contour_area: 10000  # Maximum area for marker detection (pixels)
 
 # Frame skipping (process every N-th frame, 1 = process every frame)
