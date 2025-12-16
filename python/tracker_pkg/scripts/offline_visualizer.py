@@ -230,7 +230,9 @@ def main():
     
     print("Loaded trajectory with %d points" % len(times))
     if frames is not None:
-        print("Frame numbers available: %d frames" % len(frames[frames != None]))
+        # Count non-None frames
+        valid_frames = frames[frames != None] if len(frames) > 0 else []
+        print("Frame numbers available: %d frames" % len(valid_frames))
     
     # Visualize
     visualize_trajectory(times, x, y, theta, interactive=args.interactive, frame_numbers=frames)

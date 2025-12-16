@@ -4,8 +4,6 @@
   <rosparam file="$(find tracker_pkg)/config/tracker.yaml" command="load"/>
 
   <!-- Tracker node -->
-  <node name="tracker_node" pkg="tracker_pkg" type="tracker_node.py" output="screen">
-    <rosparam file="$(find tracker_pkg)/config/tracker.yaml" command="load"/>
-  </node>
+  <node name="tracker_node" pkg="tracker_pkg" type="tracker_node.py" output="screen"/>
 </launch>
 

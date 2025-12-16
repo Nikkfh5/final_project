@@ -19,12 +19,9 @@ import cv2
 import numpy as np
 from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import PoseStamped, Point
+from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 import tf2_ros
-from tf2_geometry_msgs import do_transform_point
-import tf2_geometry_msgs
-from geometry_msgs.msg import PointStamped, TransformStamped
 
 
 class TrackerNode:
@@ -96,6 +93,27 @@ class TrackerNode:
         self.frame_number = 0  # Counter for frame numbers in trajectory
 
         rospy.on_shutdown(self.save_trajectory)
+        
+        # Validate parameters
+        if self.min_marker_distance >= self.max_marker_distance:
+            rospy.logerr("min_marker_distance (%.3f) must be < max_marker_distance (%.3f)",
+                         self.min_marker_distance, self.max_marker_distance)
+            raise ValueError("Invalid marker distance parameters")
+        
+        if self.frame_skip < 1:
+            rospy.logerr("frame_skip must be >= 1, got %d", self.frame_skip)
+            raise ValueError("Invalid frame_skip parameter")
+        
+        if self.pose_smoothing_alpha < 0.0 or self.pose_smoothing_alpha > 1.0:
+            rospy.logwarn("pose_smoothing_alpha should be in [0, 1], got %.2f", self.pose_smoothing_alpha)
+        
+        # Wait for camera_info before starting processing
+        rospy.loginfo("Waiting for camera_info...")
+        try:
+            rospy.wait_for_message(self.camera_info_topic, CameraInfo, timeout=10.0)
+            rospy.loginfo("Camera info received, tracker node ready")
+        except rospy.ROSException:
+            rospy.logwarn("Camera info not received within timeout, continuing anyway...")
         
         rospy.loginfo("Tracker node initialized")
         
@@ -170,6 +188,7 @@ class TrackerNode:
             (x, y, z) in world frame, or None if transform fails
         """
         if self.camera_matrix is None:
+            rospy.logwarn_throttle(5.0, "Camera matrix not yet initialized, waiting for camera_info...")
             return None
         
         # Get camera to world transform
@@ -187,9 +206,18 @@ class TrackerNode:
         cx = self.camera_matrix[0, 2]
         cy = self.camera_matrix[1, 2]
         
+        # Undistort pixel coordinates if distortion coefficients are available
+        if self.dist_coeffs is not None and len(self.dist_coeffs) > 0:
+            # Undistort the point
+            pts = np.array([[[u, v]]], dtype=np.float32)
+            undistorted = cv2.undistortPoints(pts, self.camera_matrix, self.dist_coeffs, P=self.camera_matrix)
+            u_undist, v_undist = undistorted[0, 0]
+        else:
+            u_undist, v_undist = u, v
+        
         # Normalized image coordinates
-        x_norm = (u - cx) / fx
-        y_norm = (v - cy) / fy
+        x_norm = (u_undist - cx) / fx
+        y_norm = (v_undist - cy) / fy
         
         # Ray direction in camera frame (z = 1 for normalized coordinates)
         ray_dir_camera = np.array([x_norm, y_norm, 1.0])
@@ -342,8 +370,6 @@ class TrackerNode:
                 dyaw = np.arctan2(np.sin(yaw - prev_yaw), np.cos(yaw - prev_yaw))
                 yaw = prev_yaw + alpha * dyaw
                 self.smoothed_pose = (center_x, center_y, yaw)
-            # Store smoothed pose for next iteration
-            self.smoothed_pose = (center_x, center_y, yaw)
         
         # Publish pose
         pose_msg = PoseStamped()
@@ -394,17 +420,20 @@ class TrackerNode:
         if not self.log_trajectory or not self.logged_points:
             return
 
-        directory = os.path.dirname(self.log_file)
+        # Expand user path (~) before getting directory
+        log_file_expanded = os.path.expanduser(self.log_file)
+        directory = os.path.dirname(log_file_expanded)
         if directory and not os.path.exists(directory):
             os.makedirs(directory)
 
+        # Use expanded path for file operations
         try:
             if self.log_format == 'json':
-                with open(self.log_file, 'w') as f:
+                with open(log_file_expanded, 'w') as f:
                     json.dump(self.logged_points, f, indent=2)
             else:
                 # default: csv
-                with open(self.log_file, 'w') as f:
+                with open(log_file_expanded, 'w') as f:
                     writer = csv.writer(f)
                     writer.writerow(['t', 'x', 'y', 'theta', 'frame'])
                     for p in self.logged_points:
@@ -415,7 +444,7 @@ class TrackerNode:
                             p['theta'],
                             p.get('frame', -1)  # -1 if frame number not available
                         ])
-            rospy.loginfo("Saved trajectory with %d points to %s", len(self.logged_points), self.log_file)
+            rospy.loginfo("Saved trajectory with %d points to %s", len(self.logged_points), log_file_expanded)
         except Exception as e:
             rospy.logerr("Failed to save trajectory: %s", str(e))
 
