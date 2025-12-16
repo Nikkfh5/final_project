@@ -135,7 +135,8 @@ class TrackerNode:
             upper_hsv: Upper HSV bound (numpy array)
             
         Returns:
-            (u, v) centroid of largest contour, or None if not found
+            ((u, v) centroid, mask) tuple, where centroid is None if not found, 
+            but mask is always returned for debugging
         """
         # Convert to HSV
         hsv = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
@@ -289,8 +290,16 @@ class TrackerNode:
         debug_image = cv_image.copy()
         
         # Добавляем маски в debug изображение для отладки
-        debug_image[:, :, 0] = np.maximum(debug_image[:, :, 0], red_mask)  # Красная маска в красном канале
-        debug_image[:, :, 2] = np.maximum(debug_image[:, :, 2], blue_mask)  # Синяя маска в синем канале
+        # Конвертируем одноканальные маски в цветные наложения
+        if red_mask is not None and red_mask.size > 0:
+            red_overlay = np.zeros_like(cv_image)
+            red_overlay[:, :, 2] = red_mask  # Красный канал для красной маски
+            debug_image = cv2.addWeighted(debug_image, 0.7, red_overlay, 0.3, 0)
+        
+        if blue_mask is not None and blue_mask.size > 0:
+            blue_overlay = np.zeros_like(cv_image)
+            blue_overlay[:, :, 0] = blue_mask  # Синий канал для синей маски
+            debug_image = cv2.addWeighted(debug_image, 0.7, blue_overlay, 0.3, 0)
         
         if red_center is None or blue_center is None:
             rospy.logwarn_throttle(2.0, "Markers not detected (red: %s, blue: %s)", 
