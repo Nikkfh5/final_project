@@ -71,6 +71,15 @@ class TrackerNode:
         self.red_channel_margin = rospy.get_param('~red_channel_margin', 40)
         self.blue_channel_min = rospy.get_param('~blue_channel_min', 80)
         self.blue_channel_margin = rospy.get_param('~blue_channel_margin', 40)
+        self.enable_circle_fallback = rospy.get_param('~enable_circle_fallback', True)
+        self.circle_min_radius = rospy.get_param('~circle_min_radius', 5)
+        self.circle_max_radius = rospy.get_param('~circle_max_radius', 80)
+        self.circle_min_distance = rospy.get_param('~circle_min_distance', 25)
+        self.circle_dp = rospy.get_param('~circle_dp', 1.2)
+        self.circle_param1 = rospy.get_param('~circle_param1', 100)
+        self.circle_param2 = rospy.get_param('~circle_param2', 15)
+        self.circle_color_margin = rospy.get_param('~circle_color_margin', 20)
+        self.circle_blur_kernel = rospy.get_param('~circle_blur_kernel', 7)
         
         self.min_contour_area = rospy.get_param('~min_contour_area', 50)
         self.max_contour_area = rospy.get_param('~max_contour_area', 10000)
@@ -228,6 +237,56 @@ class TrackerNode:
         u = int(M["m10"] / M["m00"])
         v = int(M["m01"] / M["m00"])
         return (u, v)
+
+    def _detect_markers_via_circles(self, cv_image):
+        """Fallback detection using Hough circles on grayscale image."""
+        if not self.enable_circle_fallback:
+            return {}
+
+        blur_kernel = max(3, int(self.circle_blur_kernel))
+        if blur_kernel % 2 == 0:
+            blur_kernel += 1
+
+        gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (blur_kernel, blur_kernel), 0)
+
+        circles = cv2.HoughCircles(
+            gray,
+            cv2.HOUGH_GRADIENT,
+            dp=self.circle_dp,
+            minDist=self.circle_min_distance,
+            param1=self.circle_param1,
+            param2=self.circle_param2,
+            minRadius=self.circle_min_radius,
+            maxRadius=self.circle_max_radius
+        )
+
+        results = {}
+        if circles is None:
+            return results
+
+        h, w = cv_image.shape[:2]
+        best_scores = {'red': (-np.inf, None), 'blue': (-np.inf, None)}
+
+        for circle in np.round(circles[0, :]).astype(int):
+            x, y, r = circle
+            if x < 0 or y < 0 or x >= w or y >= h:
+                continue
+            b, g, r_val = cv_image[y, x]
+            red_diff = int(r_val) - int(max(g, b))
+            blue_diff = int(b) - int(max(r_val, g))
+
+            if red_diff > best_scores['red'][0]:
+                best_scores['red'] = (red_diff, (x, y))
+            if blue_diff > best_scores['blue'][0]:
+                best_scores['blue'] = (blue_diff, (x, y))
+
+        for color in ('red', 'blue'):
+            diff, center = best_scores[color]
+            if center is not None and diff >= self.circle_color_margin:
+                results[color] = center
+
+        return results
     
     def detect_marker(self, cv_image, hsv_ranges, color_name):
         """
@@ -379,6 +438,13 @@ class TrackerNode:
         # Detect markers
         red_center, _ = self.detect_marker(cv_image, self.red_hsv_ranges, 'red')
         blue_center, _ = self.detect_marker(cv_image, self.blue_hsv_ranges, 'blue')
+
+        if (red_center is None or blue_center is None) and self.enable_circle_fallback:
+            circle_candidates = self._detect_markers_via_circles(cv_image)
+            if red_center is None and 'red' in circle_candidates:
+                red_center = circle_candidates['red']
+            if blue_center is None and 'blue' in circle_candidates:
+                blue_center = circle_candidates['blue']
         
         # Debug image - показываем исходное изображение
         debug_image = cv_image.copy()
