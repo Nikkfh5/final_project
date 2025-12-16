@@ -286,20 +286,23 @@ class TrackerNode:
         
         blue_center, blue_mask = self.detect_marker(cv_image, self.blue_lower, self.blue_upper)
         
-        # Debug image - показываем исходное изображение и маски
+        # Debug image - показываем исходное изображение
         debug_image = cv_image.copy()
         
-        # Добавляем маски в debug изображение для отладки
-        # Конвертируем одноканальные маски в цветные наложения
-        if red_mask is not None and red_mask.size > 0:
-            red_overlay = np.zeros_like(cv_image)
-            red_overlay[:, :, 2] = red_mask  # Красный канал для красной маски
-            debug_image = cv2.addWeighted(debug_image, 0.7, red_overlay, 0.3, 0)
+        # Рисуем найденные центры меток
+        if red_center is not None:
+            cv2.circle(debug_image, red_center, 10, (0, 0, 255), 2)  # Красный круг
+            cv2.putText(debug_image, "RED", (red_center[0] + 15, red_center[1]), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
         
-        if blue_mask is not None and blue_mask.size > 0:
-            blue_overlay = np.zeros_like(cv_image)
-            blue_overlay[:, :, 0] = blue_mask  # Синий канал для синей маски
-            debug_image = cv2.addWeighted(debug_image, 0.7, blue_overlay, 0.3, 0)
+        if blue_center is not None:
+            cv2.circle(debug_image, blue_center, 10, (255, 0, 0), 2)  # Синий круг
+            cv2.putText(debug_image, "BLUE", (blue_center[0] + 15, blue_center[1]), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+        
+        # Если обе метки найдены, рисуем линию между ними
+        if red_center is not None and blue_center is not None:
+            cv2.line(debug_image, red_center, blue_center, (0, 255, 0), 2)
         
         if red_center is None or blue_center is None:
             rospy.logwarn_throttle(2.0, "Markers not detected (red: %s, blue: %s)", 
