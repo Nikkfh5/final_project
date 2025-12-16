@@ -21,10 +21,9 @@
         output="screen"/>
 
   <!-- Publish static TF: world -> camera_link -->
-  <!-- TODO: Adjust x, y, z, roll, pitch, yaw according to actual camera pose in world -->
-  <!-- Expected camera pose: top-down view or slightly angled, fixed position -->
+  <!-- Камера сверху, смотрит вниз на робота -->
   <node pkg="tf2_ros" type="static_transform_publisher" name="world_to_camera_tf"
-        args="0.0 0.0 2.0 0.0 0.524 0.0 world camera_link"/>
+        args="0.0 0.0 3.0 0.0 1.57 0.0 world camera_link"/>
 
   <!-- Expected topics after launch:
        /camera/image_raw (sensor_msgs/Image)

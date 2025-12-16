@@ -14,7 +14,8 @@
     <!-- External camera sensor -->
     <model name="external_camera">
       <!-- x y z roll pitch yaw -->
-      <pose>0 0 2.0 0 0.524 0</pose> <!-- TODO: Adjust pose - x, y, z, roll, pitch, yaw -->
+      <!-- Камера сверху, смотрит вниз на робота -->
+      <pose>0 0 3.0 0 1.57 0</pose> <!-- x=0, y=0, z=3.0 (выше), pitch=1.57 (~90° вниз) -->
       <static>true</static>
       
       <link name="camera_link">
