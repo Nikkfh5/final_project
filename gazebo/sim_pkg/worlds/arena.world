@@ -58,6 +58,8 @@
             <!-- Publish both image_raw and camera_info -->
             <image_topic>image_raw</image_topic>
             <camera_info_topic>camera_info</camera_info_topic>
+            <update_rate>30</update_rate>
+            <always_on>true</always_on>
           </plugin>
         </sensor>
       </link>
