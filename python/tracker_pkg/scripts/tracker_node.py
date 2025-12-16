@@ -193,10 +193,13 @@ class TrackerNode:
             rospy.logwarn_throttle(5.0, "Camera matrix not yet initialized, waiting for camera_info...")
             return None
         
+        rospy.logdebug_once("Camera matrix: %s", self.camera_matrix)
+        
         # Get camera to world transform
         try:
             transform = self.tf_buffer.lookup_transform(
                 self.world_frame, self.camera_frame, rospy.Time())
+            rospy.logdebug_once("TF transform found: world -> camera_link")
         except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
             rospy.logwarn_throttle(1.0, "TF lookup failed: %s", str(e))
             return None
@@ -374,7 +377,15 @@ class TrackerNode:
         blue_world = self.pixel_to_world_point(blue_center[0], blue_center[1])
         
         if red_world is None or blue_world is None:
-            rospy.logwarn_throttle(1.0, "Failed to convert pixel to world coordinates")
+            rospy.logwarn_throttle(1.0, "Failed to convert pixel to world coordinates (red: %s, blue: %s)", 
+                                  red_world, blue_world)
+            # Публикуем debug изображение даже если конвертация не удалась
+            try:
+                debug_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
+                debug_msg.header = msg.header
+                self.debug_image_pub.publish(debug_msg)
+            except CvBridgeError as e:
+                rospy.logerr("Failed to publish debug image: %s", str(e))
             return
 
         # Reject detections if marker spacing is implausible
