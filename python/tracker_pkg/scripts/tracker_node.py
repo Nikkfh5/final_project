@@ -38,6 +38,7 @@ class TrackerNode:
         # Load parameters
         self.world_frame = rospy.get_param('~world_frame', 'world')
         self.camera_frame = rospy.get_param('~camera_frame', 'camera_link')
+        self.camera_frame_is_optical = rospy.get_param('~camera_frame_is_optical', True)
         self.ground_z = rospy.get_param('~ground_z', 0.0)
         self.min_marker_distance = rospy.get_param('~min_marker_distance', 0.05)
         self.max_marker_distance = rospy.get_param('~max_marker_distance', 2.0)
@@ -76,6 +77,19 @@ class TrackerNode:
         self.camera_matrix = None
         self.dist_coeffs = None
         
+        # Rotation from ROS optical frame (z-forward, x-right, y-down)
+        # to Gazebo/RViz camera_link (x-forward, y-left, z-up).
+        # Needed when the provided TF describes the x-forward convention.
+        self.optical_to_camera_matrix = np.array([
+            [0.0, 0.0, 1.0],
+            [-1.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0]
+        ])
+
+        if not self.camera_frame_is_optical:
+            rospy.loginfo("camera_frame '%s' is treated as x-forward (Gazebo-style); applying optical correction",
+                          self.camera_frame)
+
         # Subscribers
         self.image_sub = rospy.Subscriber(self.image_topic, Image, self.image_callback)
         self.camera_info_sub = rospy.Subscriber(self.camera_info_topic, CameraInfo, self.camera_info_callback)
@@ -224,9 +238,15 @@ class TrackerNode:
         x_norm = (u_undist - cx) / fx
         y_norm = (v_undist - cy) / fy
         
-        # Ray direction in camera frame (z = 1 for normalized coordinates)
+        # Ray direction in camera optical frame (z = 1 for normalized coordinates)
         ray_dir_camera = np.array([x_norm, y_norm, 1.0])
         ray_dir_camera = ray_dir_camera / np.linalg.norm(ray_dir_camera)
+
+        # Gazebo publishes camera_link with x-forward. Convert normalized ray
+        # from optical conventions when requested.
+        if not self.camera_frame_is_optical:
+            ray_dir_camera = self.optical_to_camera_matrix.dot(ray_dir_camera)
+            ray_dir_camera = ray_dir_camera / np.linalg.norm(ray_dir_camera)
         
         # Transform ray direction to world frame
         # Extract rotation matrix from transform quaternion

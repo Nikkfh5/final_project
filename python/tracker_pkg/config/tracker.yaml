@@ -3,6 +3,7 @@
 # Frame names
 world_frame: "world"
 camera_frame: "camera_link"
+camera_frame_is_optical: false
 
 # Ground plane z coordinate
 ground_z: 0.0
