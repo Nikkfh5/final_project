@@ -274,6 +274,11 @@ class TrackerNode:
             rospy.logerr("CvBridge error: %s", str(e))
             return
         
+        # Проверка, что изображение не пустое
+        if cv_image is None or cv_image.size == 0:
+            rospy.logwarn_throttle(2.0, "Received empty image")
+            return
+        
         # Detect markers
         # Красный цвет в HSV может быть около 0 или около 180 (циклический диапазон)
         # Пробуем оба диапазона для красного
