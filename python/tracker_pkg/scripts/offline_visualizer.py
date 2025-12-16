@@ -5,12 +5,13 @@
 Offline trajectory visualizer.
 
 Reads trajectory data from CSV/JSON file (format: t, x, y, theta) and
-visualizes it with matplotlib.
+visualizes it with matplotlib. Interactive mode adds a slider and click
+selection to inspect points.
 """
 
-import rospy
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
 import csv
 import json
 import argparse
@@ -36,13 +37,21 @@ def read_csv_trajectory(filename):
     
     with open(filename, 'r') as f:
         reader = csv.reader(f)
-        # TODO: Handle header row if present
         for row in reader:
-            if len(row) >= 4:
-                times.append(float(row[0]))
-                x.append(float(row[1]))
-                y.append(float(row[2]))
-                theta.append(float(row[3]))
+            if len(row) < 4:
+                continue
+            try:
+                t_val = float(row[0])
+                x_val = float(row[1])
+                y_val = float(row[2])
+                theta_val = float(row[3])
+            except ValueError:
+                # Likely a header row
+                continue
+            times.append(t_val)
+            x.append(x_val)
+            y.append(y_val)
+            theta.append(theta_val)
     
     return np.array(times), np.array(x), np.array(y), np.array(theta)
 
@@ -63,17 +72,21 @@ def read_json_trajectory(filename):
     with open(filename, 'r') as f:
         data = json.load(f)
     
-    # TODO: Handle different JSON formats
     if isinstance(data, list):
-        times = [item['t'] for item in data]
-        x = [item['x'] for item in data]
-        y = [item['y'] for item in data]
-        theta = [item['theta'] for item in data]
+        times = [item.get('t') for item in data]
+        x = [item.get('x') for item in data]
+        y = [item.get('y') for item in data]
+        theta = [item.get('theta') for item in data]
+    elif isinstance(data, dict):
+        if all(k in data for k in ['times', 'x', 'y', 'theta']):
+            times = data['times']
+            x = data['x']
+            y = data['y']
+            theta = data['theta']
+        else:
+            raise ValueError("Unsupported JSON format. Expected list of {t,x,y,theta} or dict with arrays.")
     else:
-        times = data['times']
-        x = data['x']
-        y = data['y']
-        theta = data['theta']
+        raise ValueError("Unsupported JSON structure.")
     
     return np.array(times), np.array(x), np.array(y), np.array(theta)
 
@@ -87,12 +100,20 @@ def visualize_trajectory(times, x, y, theta, interactive=False):
         x: X coordinates
         y: Y coordinates
         theta: Orientations (radians)
-        interactive: If True, add time slider and interactive features (TODO)
+        interactive: If True, add time slider and interactive click-to-select
     """
+    if len(times) == 0:
+        print("No points to visualize.")
+        return
+
     fig, ax = plt.subplots(figsize=(10, 10))
+    if interactive:
+        plt.subplots_adjust(bottom=0.2)
     
     # Plot trajectory path
-    ax.plot(x, y, 'b-', linewidth=2, label='Trajectory')
+    (traj_line,) = ax.plot(x, y, 'b-', linewidth=2, label='Trajectory')
+    current_point, = ax.plot([], [], 'ro', markersize=8, label='Selected')
+    time_text = ax.text(0.02, 0.95, '', transform=ax.transAxes)
     
     # Mark start and end
     if len(x) > 0:
@@ -117,8 +138,33 @@ def visualize_trajectory(times, x, y, theta, interactive=False):
     ax.grid(True)
     ax.axis('equal')
     
-    # TODO: Add time slider for interactive visualization
-    # TODO: Add click handler to show coordinates and time at point
+    def update_marker(idx):
+        current_point.set_data([x[idx]], [y[idx]])
+        time_text.set_text("t=%.2f, x=%.3f, y=%.3f, theta=%.2f" %
+                           (times[idx], x[idx], y[idx], theta[idx]))
+        fig.canvas.draw_idle()
+
+    if interactive:
+        slider_ax = plt.axes([0.15, 0.05, 0.7, 0.03])
+        time_slider = Slider(slider_ax, 't', times[0], times[-1], valinit=times[0])
+
+        def slider_update(val):
+            idx = np.searchsorted(times, val, side='left')
+            idx = min(max(idx, 0), len(times) - 1)
+            update_marker(idx)
+
+        time_slider.on_changed(slider_update)
+
+        def onclick(event):
+            if event.inaxes != ax:
+                return
+            dists = (x - event.xdata) ** 2 + (y - event.ydata) ** 2
+            idx = int(np.argmin(dists))
+            time_slider.set_val(times[idx])
+            update_marker(idx)
+
+        fig.canvas.mpl_connect('button_press_event', onclick)
+        update_marker(0)
     
     plt.tight_layout()
     plt.show()
@@ -130,7 +176,7 @@ def main():
     parser.add_argument('--format', type=str, choices=['csv', 'json', 'auto'],
                        default='auto', help='File format (auto-detect if not specified)')
     parser.add_argument('--interactive', action='store_true',
-                       help='Enable interactive features (TODO)')
+                       help='Enable interactive slider and click-to-select point')
     
     args = parser.parse_args()
     
@@ -168,4 +214,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

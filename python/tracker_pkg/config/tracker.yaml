@@ -16,6 +16,11 @@ pose_topic: "/robot_pose_external"
 path_topic: "/robot_path_external"
 debug_image_topic: "/debug/image"
 
+# Trajectory logging
+log_trajectory: true
+log_format: "csv"          # "csv" or "json"
+log_file: "~/tracker_logs/trajectory.csv"
+
 # HSV color thresholds for markers
 # Red marker (head)
 red_hsv:
@@ -30,4 +35,3 @@ blue_hsv:
 # Processing parameters
 min_contour_area: 50  # Minimum area for marker detection (pixels)
 max_contour_area: 10000  # Maximum area for marker detection (pixels)
-

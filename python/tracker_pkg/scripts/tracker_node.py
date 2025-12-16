@@ -11,6 +11,9 @@ This node:
 4. Publishes robot pose and path
 """
 
+import os
+import json
+import csv
 import rospy
 import cv2
 import numpy as np
@@ -45,6 +48,9 @@ class TrackerNode:
         self.pose_topic = rospy.get_param('~pose_topic', '/robot_pose_external')
         self.path_topic = rospy.get_param('~path_topic', '/robot_path_external')
         self.debug_image_topic = rospy.get_param('~debug_image_topic', '/debug/image')
+        self.log_trajectory = rospy.get_param('~log_trajectory', False)
+        self.log_format = rospy.get_param('~log_format', 'csv').lower()
+        self.log_file = os.path.expanduser(rospy.get_param('~log_file', '~/tracker_logs/trajectory.csv'))
         
         # HSV thresholds
         self.red_lower = np.array(rospy.get_param('~red_hsv/lower', [0, 100, 100]))
@@ -71,6 +77,9 @@ class TrackerNode:
         # Path storage
         self.path = Path()
         self.path.header.frame_id = self.world_frame
+        self.logged_points = []
+
+        rospy.on_shutdown(self.save_trajectory)
         
         rospy.loginfo("Tracker node initialized")
         
@@ -256,7 +265,7 @@ class TrackerNode:
         
         # Publish pose
         pose_msg = PoseStamped()
-        pose_msg.header.stamp = rospy.Time.now()
+        pose_msg.header.stamp = msg.header.stamp if msg.header.stamp else rospy.Time.now()
         pose_msg.header.frame_id = self.world_frame
         pose_msg.pose.position.x = center_x
         pose_msg.pose.position.y = center_y
@@ -276,6 +285,14 @@ class TrackerNode:
         self.path.header.stamp = rospy.Time.now()
         self.path.poses.append(pose_msg)
         self.path_pub.publish(self.path)
+
+        if self.log_trajectory:
+            self.logged_points.append({
+                't': pose_msg.header.stamp.to_sec(),
+                'x': center_x,
+                'y': center_y,
+                'theta': yaw
+            })
         
         # Publish debug image
         try:
@@ -283,6 +300,30 @@ class TrackerNode:
             self.debug_image_pub.publish(debug_msg)
         except CvBridgeError as e:
             rospy.logerr("Failed to publish debug image: %s", str(e))
+
+    def save_trajectory(self):
+        """Persist collected trajectory on shutdown."""
+        if not self.log_trajectory or not self.logged_points:
+            return
+
+        directory = os.path.dirname(self.log_file)
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory)
+
+        try:
+            if self.log_format == 'json':
+                with open(self.log_file, 'w') as f:
+                    json.dump(self.logged_points, f, indent=2)
+            else:
+                # default: csv
+                with open(self.log_file, 'w') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['t', 'x', 'y', 'theta'])
+                    for p in self.logged_points:
+                        writer.writerow([p['t'], p['x'], p['y'], p['theta']])
+            rospy.loginfo("Saved trajectory with %d points to %s", len(self.logged_points), self.log_file)
+        except Exception as e:
+            rospy.logerr("Failed to save trajectory: %s", str(e))
 
 
 def main():
@@ -295,4 +336,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
