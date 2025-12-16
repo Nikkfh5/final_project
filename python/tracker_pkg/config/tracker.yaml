@@ -6,6 +6,10 @@ camera_frame: "camera_link"
 
 # Ground plane z coordinate
 ground_z: 0.0
+min_marker_distance: 0.05   # m, reject detections when markers almost overlap
+max_marker_distance: 2.0    # m, reject detections when markers too far apart
+enable_pose_smoothing: false
+pose_smoothing_alpha: 0.2
 
 # Input topics
 image_topic: "/camera/image_raw"
@@ -35,3 +39,8 @@ blue_hsv:
 # Processing parameters
 min_contour_area: 50  # Minimum area for marker detection (pixels)
 max_contour_area: 10000  # Maximum area for marker detection (pixels)
+
+# Logging / export
+log_trajectory: true
+log_format: "csv"  # csv or json
+log_file: "~/tracker_logs/trajectory.csv"

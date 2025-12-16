@@ -42,6 +42,10 @@ class TrackerNode:
         self.world_frame = rospy.get_param('~world_frame', 'world')
         self.camera_frame = rospy.get_param('~camera_frame', 'camera_link')
         self.ground_z = rospy.get_param('~ground_z', 0.0)
+        self.min_marker_distance = rospy.get_param('~min_marker_distance', 0.05)
+        self.max_marker_distance = rospy.get_param('~max_marker_distance', 2.0)
+        self.enable_pose_smoothing = rospy.get_param('~enable_pose_smoothing', False)
+        self.pose_smoothing_alpha = rospy.get_param('~pose_smoothing_alpha', 0.2)
         
         self.image_topic = rospy.get_param('~image_topic', '/camera/image_raw')
         self.camera_info_topic = rospy.get_param('~camera_info_topic', '/camera/camera_info')
@@ -78,6 +82,7 @@ class TrackerNode:
         self.path = Path()
         self.path.header.frame_id = self.world_frame
         self.logged_points = []
+        self.smoothed_pose = None
 
         rospy.on_shutdown(self.save_trajectory)
         
@@ -252,6 +257,13 @@ class TrackerNode:
         if red_world is None or blue_world is None:
             rospy.logwarn_throttle(1.0, "Failed to convert pixel to world coordinates")
             return
+
+        # Reject detections if marker spacing is implausible
+        dist = np.hypot(blue_world[0] - red_world[0], blue_world[1] - red_world[1])
+        if dist < self.min_marker_distance or dist > self.max_marker_distance:
+            rospy.logwarn_throttle(1.0, "Marker distance out of range: %.3f m (expected %.3f..%.3f)",
+                                   dist, self.min_marker_distance, self.max_marker_distance)
+            return
         
         # Compute robot pose
         # Center = midpoint between markers
@@ -262,6 +274,21 @@ class TrackerNode:
         dx = blue_world[0] - red_world[0]
         dy = blue_world[1] - red_world[1]
         yaw = np.arctan2(dy, dx)
+
+        # Optional smoothing to reduce jitter
+        if self.enable_pose_smoothing:
+            if self.smoothed_pose is None:
+                self.smoothed_pose = (center_x, center_y, yaw)
+            else:
+                prev_x, prev_y, prev_yaw = self.smoothed_pose
+                alpha = self.pose_smoothing_alpha
+                center_x = prev_x + alpha * (center_x - prev_x)
+                center_y = prev_y + alpha * (center_y - prev_y)
+                dyaw = np.arctan2(np.sin(yaw - prev_yaw), np.cos(yaw - prev_yaw))
+                yaw = prev_yaw + alpha * dyaw
+                self.smoothed_pose = (center_x, center_y, yaw)
+            # Store smoothed pose for next iteration
+            self.smoothed_pose = (center_x, center_y, yaw)
         
         # Publish pose
         pose_msg = PoseStamped()
