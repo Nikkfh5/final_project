@@ -36,11 +36,11 @@
     <!-- Red marker (head/front) -->
     <link name="red_marker_link">
       <visual name="red_marker_visual">
-        <pose>0.2 0 0.1 0 0 0</pose> <!-- TODO: Adjust position relative to robot center -->
+        <pose>0.15 0 0.15 0 0 0</pose> <!-- Выше и ближе к центру для лучшей видимости сверху -->
         <geometry>
           <cylinder>
-            <radius>0.05</radius>
-            <length>0.02</length>
+            <radius>0.08</radius>
+            <length>0.05</length>
           </cylinder>
         </geometry>
         <material>
@@ -51,11 +51,11 @@
         </material>
       </visual>
       <collision name="red_marker_collision">
-        <pose>0.2 0 0.1 0 0 0</pose>
+        <pose>0.15 0 0.15 0 0 0</pose>
         <geometry>
           <cylinder>
-            <radius>0.05</radius>
-            <length>0.02</length>
+            <radius>0.08</radius>
+            <length>0.05</length>
           </cylinder>
         </geometry>
       </collision>
@@ -72,11 +72,11 @@
     <!-- Blue marker (tail/back) -->
     <link name="blue_marker_link">
       <visual name="blue_marker_visual">
-        <pose>-0.2 0 0.1 0 0 0</pose> <!-- TODO: Adjust position relative to robot center -->
+        <pose>-0.15 0 0.15 0 0 0</pose> <!-- Выше и ближе к центру для лучшей видимости сверху -->
         <geometry>
           <cylinder>
-            <radius>0.05</radius>
-            <length>0.02</length>
+            <radius>0.08</radius>
+            <length>0.05</length>
           </cylinder>
         </geometry>
         <material>
@@ -87,11 +87,11 @@
         </material>
       </visual>
       <collision name="blue_marker_collision">
-        <pose>-0.2 0 0.1 0 0 0</pose>
+        <pose>-0.15 0 0.15 0 0 0</pose>
         <geometry>
           <cylinder>
-            <radius>0.05</radius>
-            <length>0.02</length>
+            <radius>0.08</radius>
+            <length>0.05</length>
           </cylinder>
         </geometry>
       </collision>
