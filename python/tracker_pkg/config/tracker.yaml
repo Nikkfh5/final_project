@@ -31,19 +31,30 @@ log_file: "~/tracker_logs/trajectory.csv"
 # Red in HSV can be around 0 or around 180 (cyclic range)
 # Using very wide thresholds for Gazebo colors
 red_hsv:
-  lower: [0, 30, 30]    # Very wide range for red
-  upper: [15, 255, 255]
+  lower: [0, 20, 20]    # Very wide range for red
+  upper: [20, 255, 255]
+  extra_ranges:
+    - lower: [170, 20, 20]
+      upper: [180, 255, 255]
 
 # Blue marker (tail)
 # Blue is usually in range 100-130, but may be less saturated in Gazebo
 blue_hsv:
-  lower: [95, 30, 30]  # Very low saturation and brightness thresholds
-  upper: [135, 255, 255]
+  lower: [90, 20, 20]  # Very low saturation and brightness thresholds
+  upper: [140, 255, 255]
 
 # Processing parameters
 # Reduced minimum area as markers may be small in image
 min_contour_area: 10  # Minimum area for marker detection (pixels) - very low to catch small markers
 max_contour_area: 50000  # Maximum area for marker detection (pixels) - increased
+morph_kernel_size: 5   # Morphology kernel size in pixels
+
+# Fallback based on raw BGR dominance (helps in Gazebo lighting)
+enable_channel_fallback: true
+red_channel_min: 80
+red_channel_margin: 40
+blue_channel_min: 80
+blue_channel_margin: 40
 
 # Frame skipping (process every N-th frame, 1 = process every frame)
 frame_skip: 1

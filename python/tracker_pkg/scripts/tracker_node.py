@@ -54,14 +54,27 @@ class TrackerNode:
         self.log_format = rospy.get_param('~log_format', 'csv').lower()
         self.log_file = os.path.expanduser(rospy.get_param('~log_file', '~/tracker_logs/trajectory.csv'))
         
-        # HSV thresholds
-        self.red_lower = np.array(rospy.get_param('~red_hsv/lower', [0, 100, 100]))
-        self.red_upper = np.array(rospy.get_param('~red_hsv/upper', [10, 255, 255]))
-        self.blue_lower = np.array(rospy.get_param('~blue_hsv/lower', [100, 100, 100]))
-        self.blue_upper = np.array(rospy.get_param('~blue_hsv/upper', [130, 255, 255]))
+        # HSV thresholds and detection fallbacks
+        self.red_hsv_ranges = self._load_hsv_ranges(
+            'red_hsv',
+            default_lower=[0, 25, 25],
+            default_upper=[20, 255, 255],
+            default_extra=[{'lower': [170, 25, 25], 'upper': [180, 255, 255]}]
+        )
+        self.blue_hsv_ranges = self._load_hsv_ranges(
+            'blue_hsv',
+            default_lower=[95, 25, 25],
+            default_upper=[140, 255, 255]
+        )
+        self.enable_channel_fallback = rospy.get_param('~enable_channel_fallback', True)
+        self.red_channel_min = rospy.get_param('~red_channel_min', 80)
+        self.red_channel_margin = rospy.get_param('~red_channel_margin', 40)
+        self.blue_channel_min = rospy.get_param('~blue_channel_min', 80)
+        self.blue_channel_margin = rospy.get_param('~blue_channel_margin', 40)
         
         self.min_contour_area = rospy.get_param('~min_contour_area', 50)
         self.max_contour_area = rospy.get_param('~max_contour_area', 10000)
+        self.morph_kernel_size = rospy.get_param('~morph_kernel_size', 5)
         
         # Frame skipping (process every N-th frame)
         self.frame_skip = rospy.get_param('~frame_skip', 1)  # 1 = process every frame
@@ -138,15 +151,92 @@ class TrackerNode:
         # Distortion coefficients
         self.dist_coeffs = np.array(msg.D)
         rospy.loginfo_once("Camera intrinsics received")
+
+    def _load_hsv_ranges(self, param_prefix, default_lower, default_upper, default_extra=None):
+        """Load HSV ranges from params, supporting multiple intervals."""
+        ranges = []
+        lower = np.array(rospy.get_param(f'~{param_prefix}/lower', default_lower))
+        upper = np.array(rospy.get_param(f'~{param_prefix}/upper', default_upper))
+        ranges.append((lower, upper))
+
+        extra_ranges = rospy.get_param(f'~{param_prefix}/extra_ranges', default_extra or [])
+        for rng in extra_ranges:
+            extra_lower = np.array(rng.get('lower', default_lower))
+            extra_upper = np.array(rng.get('upper', default_upper))
+            ranges.append((extra_lower, extra_upper))
+        return ranges
+
+    def _apply_morphology(self, mask):
+        """Clean up binary mask using configurable kernel."""
+        if mask is None:
+            return None
+        kernel_size = max(1, int(self.morph_kernel_size))
+        if kernel_size % 2 == 0:
+            kernel_size += 1  # prefer odd size kernels
+        kernel = np.ones((kernel_size, kernel_size), np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        return mask
+
+    def _channel_fallback_mask(self, cv_image, color_name):
+        """Use raw BGR channel dominance when HSV detection fails."""
+        if not self.enable_channel_fallback:
+            return None
+
+        b = cv_image[:, :, 0].astype(np.int16)
+        g = cv_image[:, :, 1].astype(np.int16)
+        r = cv_image[:, :, 2].astype(np.int16)
+
+        if color_name == 'red':
+            dominant = r - np.maximum(b, g)
+            mask = np.where(
+                (dominant >= self.red_channel_margin) & (r >= self.red_channel_min),
+                255,
+                0
+            ).astype(np.uint8)
+        elif color_name == 'blue':
+            dominant = b - np.maximum(r, g)
+            mask = np.where(
+                (dominant >= self.blue_channel_margin) & (b >= self.blue_channel_min),
+                255,
+                0
+            ).astype(np.uint8)
+        else:
+            return None
+
+        return mask if np.count_nonzero(mask) else None
+
+    def _extract_centroid_from_mask(self, mask):
+        """Find marker centroid in mask, honoring contour size limits."""
+        if mask is None:
+            return None
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return None
+
+        largest_contour = max(contours, key=cv2.contourArea)
+        area = cv2.contourArea(largest_contour)
+        if area < self.min_contour_area or area > self.max_contour_area:
+            rospy.logdebug("Contour area %d out of range [%d, %d]", area,
+                           self.min_contour_area, self.max_contour_area)
+            return None
+
+        M = cv2.moments(largest_contour)
+        if M["m00"] == 0:
+            return None
+
+        u = int(M["m10"] / M["m00"])
+        v = int(M["m01"] / M["m00"])
+        return (u, v)
     
-    def detect_marker(self, cv_image, lower_hsv, upper_hsv):
+    def detect_marker(self, cv_image, hsv_ranges, color_name):
         """
         Detect colored marker in image using HSV thresholding.
         
         Args:
             cv_image: OpenCV image (BGR)
-            lower_hsv: Lower HSV bound (numpy array)
-            upper_hsv: Upper HSV bound (numpy array)
+            hsv_ranges: List of (lower, upper) HSV arrays
+            color_name: 'red' or 'blue', used for fallbacks
             
         Returns:
             ((u, v) centroid, mask) tuple, where centroid is None if not found, 
@@ -155,38 +245,22 @@ class TrackerNode:
         # Convert to HSV
         hsv = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
         
-        # Threshold
-        mask = cv2.inRange(hsv, lower_hsv, upper_hsv)
+        # Combine all HSV ranges
+        mask = None
+        for lower, upper in hsv_ranges:
+            current = cv2.inRange(hsv, lower, upper)
+            mask = current if mask is None else cv2.bitwise_or(mask, current)
         
-        # Morphological operations to remove noise
-        kernel = np.ones((5, 5), np.uint8)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        mask = self._apply_morphology(mask)
+        centroid = self._extract_centroid_from_mask(mask)
         
-        # Find contours
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if centroid is None:
+            fallback_mask = self._channel_fallback_mask(cv_image, color_name)
+            if fallback_mask is not None:
+                mask = self._apply_morphology(fallback_mask)
+                centroid = self._extract_centroid_from_mask(mask)
         
-        if not contours:
-            return None, mask
-        
-        # Find largest contour
-        largest_contour = max(contours, key=cv2.contourArea)
-        area = cv2.contourArea(largest_contour)
-        
-        # Filter by area
-        if area < self.min_contour_area or area > self.max_contour_area:
-            rospy.logdebug("Contour area %d out of range [%d, %d]", area, self.min_contour_area, self.max_contour_area)
-            return None, mask
-        
-        # Compute centroid
-        M = cv2.moments(largest_contour)
-        if M["m00"] == 0:
-            return None, mask
-        
-        u = int(M["m10"] / M["m00"])
-        v = int(M["m01"] / M["m00"])
-        
-        return (u, v), mask
+        return centroid, mask
     
     def pixel_to_world_point(self, u, v):
         """
@@ -303,16 +377,8 @@ class TrackerNode:
             return
         
         # Detect markers
-        # Красный цвет в HSV может быть около 0 или около 180 (циклический диапазон)
-        # Пробуем оба диапазона для красного
-        red_center, red_mask = self.detect_marker(cv_image, self.red_lower, self.red_upper)
-        if red_center is None:
-            # Пробуем второй диапазон для красного (170-180)
-            red_lower2 = np.array([170, self.red_lower[1], self.red_lower[2]])
-            red_upper2 = np.array([180, self.red_upper[1], self.red_upper[2]])
-            red_center, red_mask = self.detect_marker(cv_image, red_lower2, red_upper2)
-        
-        blue_center, blue_mask = self.detect_marker(cv_image, self.blue_lower, self.blue_upper)
+        red_center, _ = self.detect_marker(cv_image, self.red_hsv_ranges, 'red')
+        blue_center, _ = self.detect_marker(cv_image, self.blue_hsv_ranges, 'blue')
         
         # Debug image - показываем исходное изображение
         debug_image = cv_image.copy()
