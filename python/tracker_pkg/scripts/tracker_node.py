@@ -294,20 +294,25 @@ class TrackerNode:
         # Debug image - показываем исходное изображение
         debug_image = cv_image.copy()
         
+        # Добавляем отладочный текст
+        status_text = f"Red: {'FOUND' if red_center else 'NOT FOUND'}, Blue: {'FOUND' if blue_center else 'NOT FOUND'}"
+        cv2.putText(debug_image, status_text, (10, 30), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        
         # Рисуем найденные центры меток
         if red_center is not None:
-            cv2.circle(debug_image, red_center, 10, (0, 0, 255), 2)  # Красный круг
-            cv2.putText(debug_image, "RED", (red_center[0] + 15, red_center[1]), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            cv2.circle(debug_image, red_center, 15, (0, 0, 255), 3)  # Красный круг
+            cv2.putText(debug_image, "RED", (red_center[0] + 20, red_center[1]), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
         
         if blue_center is not None:
-            cv2.circle(debug_image, blue_center, 10, (255, 0, 0), 2)  # Синий круг
-            cv2.putText(debug_image, "BLUE", (blue_center[0] + 15, blue_center[1]), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+            cv2.circle(debug_image, blue_center, 15, (255, 0, 0), 3)  # Синий круг
+            cv2.putText(debug_image, "BLUE", (blue_center[0] + 20, blue_center[1]), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
         
         # Если обе метки найдены, рисуем линию между ними
         if red_center is not None and blue_center is not None:
-            cv2.line(debug_image, red_center, blue_center, (0, 255, 0), 2)
+            cv2.line(debug_image, red_center, blue_center, (0, 255, 0), 3)
         
         if red_center is None or blue_center is None:
             rospy.logwarn_throttle(2.0, "Markers not detected (red: %s, blue: %s)", 
@@ -347,12 +352,13 @@ class TrackerNode:
                 else:
                     rospy.logwarn_throttle(2.0, "Markers lost for too long, stopping interpolation")
             
-            # Publish debug image anyway
+            # Publish debug image anyway (даже если метки не найдены)
             try:
                 debug_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
+                debug_msg.header = msg.header  # Сохраняем header от исходного сообщения
                 self.debug_image_pub.publish(debug_msg)
-            except CvBridgeError:
-                pass
+            except CvBridgeError as e:
+                rospy.logerr("Failed to publish debug image: %s", str(e))
             return
         
         # Markers detected - reset lost counter
@@ -441,6 +447,7 @@ class TrackerNode:
         # Publish debug image
         try:
             debug_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
+            debug_msg.header = msg.header  # Сохраняем header от исходного сообщения
             self.debug_image_pub.publish(debug_msg)
         except CvBridgeError as e:
             rospy.logerr("Failed to publish debug image: %s", str(e))
