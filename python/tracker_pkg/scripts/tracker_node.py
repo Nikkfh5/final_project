@@ -152,7 +152,7 @@ class TrackerNode:
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         if not contours:
-            return None
+            return None, mask
         
         # Find largest contour
         largest_contour = max(contours, key=cv2.contourArea)
@@ -160,17 +160,18 @@ class TrackerNode:
         
         # Filter by area
         if area < self.min_contour_area or area > self.max_contour_area:
-            return None
+            rospy.logdebug("Contour area %d out of range [%d, %d]", area, self.min_contour_area, self.max_contour_area)
+            return None, mask
         
         # Compute centroid
         M = cv2.moments(largest_contour)
         if M["m00"] == 0:
-            return None
+            return None, mask
         
         u = int(M["m10"] / M["m00"])
         v = int(M["m01"] / M["m00"])
         
-        return (u, v)
+        return (u, v), mask
     
     def pixel_to_world_point(self, u, v):
         """
@@ -275,17 +276,21 @@ class TrackerNode:
         # Detect markers
         # Красный цвет в HSV может быть около 0 или около 180 (циклический диапазон)
         # Пробуем оба диапазона для красного
-        red_center = self.detect_marker(cv_image, self.red_lower, self.red_upper)
+        red_center, red_mask = self.detect_marker(cv_image, self.red_lower, self.red_upper)
         if red_center is None:
             # Пробуем второй диапазон для красного (170-180)
             red_lower2 = np.array([170, self.red_lower[1], self.red_lower[2]])
             red_upper2 = np.array([180, self.red_upper[1], self.red_upper[2]])
-            red_center = self.detect_marker(cv_image, red_lower2, red_upper2)
+            red_center, red_mask = self.detect_marker(cv_image, red_lower2, red_upper2)
         
-        blue_center = self.detect_marker(cv_image, self.blue_lower, self.blue_upper)
+        blue_center, blue_mask = self.detect_marker(cv_image, self.blue_lower, self.blue_upper)
         
-        # Debug image
+        # Debug image - показываем исходное изображение и маски
         debug_image = cv_image.copy()
+        
+        # Добавляем маски в debug изображение для отладки
+        debug_image[:, :, 0] = np.maximum(debug_image[:, :, 0], red_mask)  # Красная маска в красном канале
+        debug_image[:, :, 2] = np.maximum(debug_image[:, :, 2], blue_mask)  # Синяя маска в синем канале
         
         if red_center is None or blue_center is None:
             rospy.logwarn_throttle(2.0, "Markers not detected (red: %s, blue: %s)", 

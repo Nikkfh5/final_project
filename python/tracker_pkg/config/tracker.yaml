@@ -28,21 +28,21 @@ log_file: "~/tracker_logs/trajectory.csv"
 # HSV color thresholds for markers
 # Red marker (head)
 # Red in HSV can be around 0 or around 180 (cyclic range)
-# Using wider thresholds for Gazebo colors
+# Using very wide thresholds for Gazebo colors
 red_hsv:
-  lower: [0, 50, 50]    # Wider range for red
-  upper: [10, 255, 255]
+  lower: [0, 30, 30]    # Very wide range for red
+  upper: [15, 255, 255]
 
 # Blue marker (tail)
 # Blue is usually in range 100-130, but may be less saturated in Gazebo
 blue_hsv:
-  lower: [100, 50, 50]  # Lower saturation and brightness thresholds
-  upper: [130, 255, 255]
+  lower: [95, 30, 30]  # Very low saturation and brightness thresholds
+  upper: [135, 255, 255]
 
 # Processing parameters
 # Reduced minimum area as markers may be small in image
-min_contour_area: 20  # Minimum area for marker detection (pixels)
-max_contour_area: 10000  # Maximum area for marker detection (pixels)
+min_contour_area: 10  # Minimum area for marker detection (pixels) - very low to catch small markers
+max_contour_area: 50000  # Maximum area for marker detection (pixels) - increased
 
 # Frame skipping (process every N-th frame, 1 = process every frame)
 frame_skip: 1
