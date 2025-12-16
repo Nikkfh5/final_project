@@ -22,18 +22,21 @@ def read_csv_trajectory(filename):
     """
     Read trajectory from CSV file.
     
-    Expected format: t, x, y, theta (one row per sample)
+    Expected format: t, x, y, theta [, frame] (one row per sample)
     
     Args:
         filename: Path to CSV file
         
     Returns:
-        (times, x, y, theta) as numpy arrays
+        (times, x, y, theta, frame_numbers) as numpy arrays
+        frame_numbers may be None if not present in file
     """
     times = []
     x = []
     y = []
     theta = []
+    frame_numbers = []
+    has_frames = False
     
     with open(filename, 'r') as f:
         reader = csv.reader(f)
@@ -45,6 +48,11 @@ def read_csv_trajectory(filename):
                 x_val = float(row[1])
                 y_val = float(row[2])
                 theta_val = float(row[3])
+                if len(row) >= 5:
+                    frame_numbers.append(int(row[4]))
+                    has_frames = True
+                else:
+                    frame_numbers.append(None)
             except ValueError:
                 # Likely a header row
                 continue
@@ -53,21 +61,23 @@ def read_csv_trajectory(filename):
             y.append(y_val)
             theta.append(theta_val)
     
-    return np.array(times), np.array(x), np.array(y), np.array(theta)
+    frames = np.array(frame_numbers) if has_frames else None
+    return np.array(times), np.array(x), np.array(y), np.array(theta), frames
 
 
 def read_json_trajectory(filename):
     """
     Read trajectory from JSON file.
     
-    Expected format: list of dicts with keys 't', 'x', 'y', 'theta'
-    or dict with keys 'times', 'x', 'y', 'theta' as arrays
+    Expected format: list of dicts with keys 't', 'x', 'y', 'theta' [, 'frame']
+    or dict with keys 'times', 'x', 'y', 'theta' [, 'frames'] as arrays
     
     Args:
         filename: Path to JSON file
         
     Returns:
-        (times, x, y, theta) as numpy arrays
+        (times, x, y, theta, frame_numbers) as numpy arrays
+        frame_numbers may be None if not present
     """
     with open(filename, 'r') as f:
         data = json.load(f)
@@ -77,21 +87,24 @@ def read_json_trajectory(filename):
         x = [item.get('x') for item in data]
         y = [item.get('y') for item in data]
         theta = [item.get('theta') for item in data]
+        frames = [item.get('frame') for item in data] if any('frame' in item for item in data) else None
     elif isinstance(data, dict):
         if all(k in data for k in ['times', 'x', 'y', 'theta']):
             times = data['times']
             x = data['x']
             y = data['y']
             theta = data['theta']
+            frames = data.get('frames', None)
         else:
             raise ValueError("Unsupported JSON format. Expected list of {t,x,y,theta} or dict with arrays.")
     else:
         raise ValueError("Unsupported JSON structure.")
     
-    return np.array(times), np.array(x), np.array(y), np.array(theta)
+    frame_array = np.array(frames) if frames is not None else None
+    return np.array(times), np.array(x), np.array(y), np.array(theta), frame_array
 
 
-def visualize_trajectory(times, x, y, theta, interactive=False):
+def visualize_trajectory(times, x, y, theta, interactive=False, frame_numbers=None):
     """
     Visualize trajectory as 2D plot.
     
@@ -101,19 +114,24 @@ def visualize_trajectory(times, x, y, theta, interactive=False):
         y: Y coordinates
         theta: Orientations (radians)
         interactive: If True, add time slider and interactive click-to-select
+        frame_numbers: Optional array of frame numbers for each point
     """
     if len(times) == 0:
         print("No points to visualize.")
         return
 
-    fig, ax = plt.subplots(figsize=(10, 10))
+    fig = plt.figure(figsize=(14, 10))
     if interactive:
-        plt.subplots_adjust(bottom=0.2)
+        plt.subplots_adjust(bottom=0.2, right=0.75)
+    
+    ax = fig.add_subplot(111)
     
     # Plot trajectory path
-    (traj_line,) = ax.plot(x, y, 'b-', linewidth=2, label='Trajectory')
-    current_point, = ax.plot([], [], 'ro', markersize=8, label='Selected')
-    time_text = ax.text(0.02, 0.95, '', transform=ax.transAxes)
+    (traj_line,) = ax.plot(x, y, 'b-', linewidth=2, label='Trajectory', alpha=0.7)
+    current_point, = ax.plot([], [], 'ro', markersize=10, label='Selected', zorder=5)
+    time_text = ax.text(0.02, 0.98, '', transform=ax.transAxes, 
+                       bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8),
+                       fontsize=10, verticalalignment='top')
     
     # Mark start and end
     if len(x) > 0:
@@ -140,8 +158,12 @@ def visualize_trajectory(times, x, y, theta, interactive=False):
     
     def update_marker(idx):
         current_point.set_data([x[idx]], [y[idx]])
-        time_text.set_text("t=%.2f, x=%.3f, y=%.3f, theta=%.2f" %
-                           (times[idx], x[idx], y[idx], theta[idx]))
+        frame_info = ""
+        if frame_numbers is not None and idx < len(frame_numbers):
+            frame_info = f", frame={frame_numbers[idx]}"
+        time_text.set_text("t=%.2f s\nx=%.3f m\ny=%.3f m\ntheta=%.2f rad (%.1f°)%s" %
+                           (times[idx], x[idx], y[idx], theta[idx], 
+                            np.degrees(theta[idx]), frame_info))
         fig.canvas.draw_idle()
 
     if interactive:
@@ -199,17 +221,19 @@ def main():
     # Read trajectory
     try:
         if format_type == 'csv':
-            times, x, y, theta = read_csv_trajectory(args.filename)
+            times, x, y, theta, frames = read_csv_trajectory(args.filename)
         else:
-            times, x, y, theta = read_json_trajectory(args.filename)
+            times, x, y, theta, frames = read_json_trajectory(args.filename)
     except Exception as e:
         print("Error reading trajectory: %s" % str(e))
         return
     
     print("Loaded trajectory with %d points" % len(times))
+    if frames is not None:
+        print("Frame numbers available: %d frames" % len(frames[frames != None]))
     
     # Visualize
-    visualize_trajectory(times, x, y, theta, interactive=args.interactive)
+    visualize_trajectory(times, x, y, theta, interactive=args.interactive, frame_numbers=frames)
 
 
 if __name__ == '__main__':

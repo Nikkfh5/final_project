@@ -27,4 +27,16 @@ Thumbs.db
 
 # Logs
 *.log
+*.bag
 
+# Trajectory logs
+tracker_logs/
+~/tracker_logs/
+
+# Gazebo
+.gazebo/
+
+# Temporary files
+*.tmp
+*.bak
+*~

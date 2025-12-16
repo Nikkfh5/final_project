@@ -4,7 +4,6 @@
   <include file="$(find sim_pkg)/launch/sim.launch"/>
   
   <!-- Wait a bit for simulation to start -->
-  <arg name="wait_time" value="3"/>
   <node name="wait_for_sim" pkg="rospy_tutorials" type="talker" output="screen" if="false"/>
   
   <!-- Launch tracker -->

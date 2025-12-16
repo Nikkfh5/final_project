@@ -65,6 +65,16 @@ class TrackerNode:
         self.min_contour_area = rospy.get_param('~min_contour_area', 50)
         self.max_contour_area = rospy.get_param('~max_contour_area', 10000)
         
+        # Frame skipping (process every N-th frame)
+        self.frame_skip = rospy.get_param('~frame_skip', 1)  # 1 = process every frame
+        self.frame_counter = 0
+        
+        # Interpolation when markers are lost
+        self.enable_interpolation = rospy.get_param('~enable_interpolation', True)
+        self.last_valid_pose = None
+        self.markers_lost_count = 0
+        self.max_lost_frames = rospy.get_param('~max_lost_frames', 10)  # Max frames to interpolate
+        
         # Camera intrinsics (will be set from camera_info)
         self.camera_matrix = None
         self.dist_coeffs = None
@@ -83,6 +93,7 @@ class TrackerNode:
         self.path.header.frame_id = self.world_frame
         self.logged_points = []
         self.smoothed_pose = None
+        self.frame_number = 0  # Counter for frame numbers in trajectory
 
         rospy.on_shutdown(self.save_trajectory)
         
@@ -221,6 +232,12 @@ class TrackerNode:
     
     def image_callback(self, msg):
         """Process incoming image and publish robot pose."""
+        # Frame skipping: process only every N-th frame
+        self.frame_counter += 1
+        if self.frame_counter < self.frame_skip:
+            return
+        self.frame_counter = 0
+        
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         except CvBridgeError as e:
@@ -237,6 +254,41 @@ class TrackerNode:
         if red_center is None or blue_center is None:
             rospy.logwarn_throttle(2.0, "Markers not detected (red: %s, blue: %s)", 
                                   red_center, blue_center)
+            
+            # Try interpolation if enabled and we have a last valid pose
+            if self.enable_interpolation and self.last_valid_pose is not None:
+                if self.markers_lost_count < self.max_lost_frames:
+                    self.markers_lost_count += 1
+                    # Use last valid pose for interpolation
+                    pose_msg = PoseStamped()
+                    pose_msg.header.stamp = msg.header.stamp if msg.header.stamp else rospy.Time.now()
+                    pose_msg.header.frame_id = self.world_frame
+                    pose_msg.pose = self.last_valid_pose
+                    
+                    self.pose_pub.publish(pose_msg)
+                    self.path.header.stamp = rospy.Time.now()
+                    self.path.poses.append(pose_msg)
+                    self.path_pub.publish(self.path)
+                    
+                    if self.log_trajectory:
+                        # Extract pose data for logging
+                        x = pose_msg.pose.position.x
+                        y = pose_msg.pose.position.y
+                        # Convert quaternion to yaw
+                        q = pose_msg.pose.orientation
+                        yaw = np.arctan2(2*(q.w*q.z + q.x*q.y), 1 - 2*(q.y*q.y + q.z*q.z))
+                        self.logged_points.append({
+                            't': pose_msg.header.stamp.to_sec(),
+                            'x': x,
+                            'y': y,
+                            'theta': yaw,
+                            'frame': self.frame_number
+                        })
+                        self.frame_number += 1
+                    rospy.logdebug("Using interpolated pose (lost frames: %d)", self.markers_lost_count)
+                else:
+                    rospy.logwarn_throttle(2.0, "Markers lost for too long, stopping interpolation")
+            
             # Publish debug image anyway
             try:
                 debug_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
@@ -244,6 +296,9 @@ class TrackerNode:
             except CvBridgeError:
                 pass
             return
+        
+        # Markers detected - reset lost counter
+        self.markers_lost_count = 0
         
         # Draw detected centers
         cv2.circle(debug_image, red_center, 5, (0, 0, 255), -1)
@@ -306,6 +361,10 @@ class TrackerNode:
         pose_msg.pose.orientation.z = sy
         pose_msg.pose.orientation.w = cy
         
+        # Store as last valid pose for interpolation
+        if self.enable_interpolation:
+            self.last_valid_pose = pose_msg.pose
+        
         self.pose_pub.publish(pose_msg)
         
         # Update path
@@ -318,8 +377,10 @@ class TrackerNode:
                 't': pose_msg.header.stamp.to_sec(),
                 'x': center_x,
                 'y': center_y,
-                'theta': yaw
+                'theta': yaw,
+                'frame': self.frame_number
             })
+            self.frame_number += 1
         
         # Publish debug image
         try:
@@ -345,9 +406,15 @@ class TrackerNode:
                 # default: csv
                 with open(self.log_file, 'w') as f:
                     writer = csv.writer(f)
-                    writer.writerow(['t', 'x', 'y', 'theta'])
+                    writer.writerow(['t', 'x', 'y', 'theta', 'frame'])
                     for p in self.logged_points:
-                        writer.writerow([p['t'], p['x'], p['y'], p['theta']])
+                        writer.writerow([
+                            p['t'], 
+                            p['x'], 
+                            p['y'], 
+                            p['theta'],
+                            p.get('frame', -1)  # -1 if frame number not available
+                        ])
             rospy.loginfo("Saved trajectory with %d points to %s", len(self.logged_points), self.log_file)
         except Exception as e:
             rospy.logerr("Failed to save trajectory: %s", str(e))

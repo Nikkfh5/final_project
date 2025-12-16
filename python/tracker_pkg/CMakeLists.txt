@@ -18,6 +18,7 @@ catkin_package(
 catkin_install_python(PROGRAMS
   scripts/tracker_node.py
   scripts/offline_visualizer.py
+  scripts/process_image_sequence.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

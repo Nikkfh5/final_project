@@ -40,7 +40,9 @@ blue_hsv:
 min_contour_area: 50  # Minimum area for marker detection (pixels)
 max_contour_area: 10000  # Maximum area for marker detection (pixels)
 
-# Logging / export
-log_trajectory: true
-log_format: "csv"  # csv or json
-log_file: "~/tracker_logs/trajectory.csv"
+# Frame skipping (process every N-th frame, 1 = process every frame)
+frame_skip: 1
+
+# Interpolation when markers are lost
+enable_interpolation: true
+max_lost_frames: 10  # Maximum number of frames to interpolate when markers are lost
