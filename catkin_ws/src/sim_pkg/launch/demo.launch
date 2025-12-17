@@ -1,9 +1,30 @@
 <?xml version="1.0"?>
 <launch>
+  <!-- Shared args for switching between stock and custom worlds -->
+  <arg name="world_file" default="$(find sim_pkg)/worlds/arena.world"/>
+  <arg name="spawn_robot" default="true"/>
+  <arg name="robot_model" default="$(find sim_pkg)/models/robot_with_markers/model.sdf"/>
+  <arg name="robot_name" default="robot_with_markers"/>
+  <arg name="robot_x" default="0.0"/>
+  <arg name="robot_y" default="0.0"/>
+  <arg name="robot_z" default="0.1"/>
+  <arg name="publish_static_camera_tf" default="true"/>
+  <arg name="gui" default="true"/>
+
   <!-- Launch simulation -->
-  <include file="$(find sim_pkg)/launch/sim.launch"/>
-  
-  <!-- Launch tracker with overridable logging args -->
+  <include file="$(find sim_pkg)/launch/sim.launch">
+    <arg name="world_file" value="$(arg world_file)"/>
+    <arg name="spawn_robot" value="$(arg spawn_robot)"/>
+    <arg name="robot_model" value="$(arg robot_model)"/>
+    <arg name="robot_name" value="$(arg robot_name)"/>
+    <arg name="robot_x" value="$(arg robot_x)"/>
+    <arg name="robot_y" value="$(arg robot_y)"/>
+    <arg name="robot_z" value="$(arg robot_z)"/>
+    <arg name="publish_static_camera_tf" value="$(arg publish_static_camera_tf)"/>
+    <arg name="gui" value="$(arg gui)"/>
+  </include>
+
+  <!-- Launch tracker with overridable logging/world args -->
   <arg name="log_trajectory" default="true"/>
   <arg name="logging_initially_on" default="false"/>
   <arg name="log_format" default="json"/>
@@ -11,6 +32,7 @@
   <arg name="png_output" default="$(find tracker_pkg)/../../tracker_logs/trajectory.png"/>
 
   <include file="$(find tracker_pkg)/launch/tracker.launch">
+    <arg name="world_file" value="$(arg world_file)"/>
     <arg name="log_trajectory" value="$(arg log_trajectory)"/>
     <arg name="logging_initially_on" value="$(arg logging_initially_on)"/>
     <arg name="log_format" value="$(arg log_format)"/>
@@ -19,7 +41,7 @@
   </include>
 
   <!-- Simple circular motion via cmd_vel (uses planar_move plugin in model.sdf) -->
-  <node name="robot_motion" pkg="sim_pkg" type="cmd_vel_circle.py" output="screen" required="false">
+  <node name="robot_motion" pkg="sim_pkg" type="cmd_vel_circle.py" output="screen" required="false" if="$(arg spawn_robot)">
     <param name="radius" value="0.6"/>
     <param name="angular_speed" value="0.35"/>
   </node>

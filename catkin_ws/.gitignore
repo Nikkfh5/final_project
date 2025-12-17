@@ -1,7 +1,8 @@
 build/
 devel/
-logs/
 install/
+logs/
+log/
+.catkin_workspace
 *.pyc
 __pycache__/
-*.swp

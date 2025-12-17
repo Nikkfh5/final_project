@@ -89,6 +89,15 @@ source devel/setup.bash
 rosservice call /tracker_node/stop_logging
 ```
 
+Если используете пользовательский world (лежит в `sim_pkg/worlds/custom/`), передайте его в demo.launch — он попадёт и в симулятор, и в трекер:
+
+```bash
+roslaunch sim_pkg demo.launch \
+  world_file:=$(find sim_pkg)/worlds/custom/my_world.world \
+  publish_static_camera_tf:=false \
+  spawn_robot:=false
+```
+
 ### Проверка работы
 
 1. **Проверить топики**:

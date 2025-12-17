@@ -7,6 +7,7 @@
   <arg name="log_file" default="$(find tracker_pkg)/../../tracker_logs/trajectory.json"/>
   <arg name="png_output" default="$(find tracker_pkg)/../../tracker_logs/trajectory.png"/>
   <arg name="node_name" default="tracker_node"/>
+  <arg name="world_file" default=""/>
 
   <!-- Load configuration parameters under the node namespace -->
   <rosparam file="$(find tracker_pkg)/config/tracker.yaml" command="load" ns="$(arg node_name)"/>
@@ -18,6 +19,6 @@
     <param name="log_format" value="$(arg log_format)"/>
     <param name="log_file" value="$(arg log_file)"/>
     <param name="png_output" value="$(arg png_output)"/>
+    <param name="world_file" value="$(arg world_file)"/>
   </node>
 </launch>
-
