@@ -17,6 +17,7 @@ catkin_package(
 
 catkin_install_python(PROGRAMS
   scripts/move_robot.py
+  scripts/cmd_vel_circle.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

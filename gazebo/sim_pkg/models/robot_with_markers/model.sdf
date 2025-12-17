@@ -116,7 +116,17 @@
       <child>blue_marker_link</child>
     </joint>
 
-    <!-- TODO: Add plugin for robot control if needed (e.g., differential drive) -->
+    <!-- Planar move plugin: drives base_link using /cmd_vel -->
+    <plugin name="planar_move" filename="libgazebo_ros_planar_move.so">
+      <ros>
+        <namespace>/</namespace>
+      </ros>
+      <bodyName>base_link</bodyName>
+      <topicName>cmd_vel</topicName>
+      <maxForce>10</maxForce>
+      <maxTorque>10</maxTorque>
+      <xyzOffsets>0 0 0</xyzOffsets>
+      <rpyOffsets>0 0 0</rpyOffsets>
+    </plugin>
   </model>
 </sdf>
-

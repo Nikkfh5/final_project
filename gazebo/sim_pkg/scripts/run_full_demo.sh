@@ -13,7 +13,7 @@ set -euo pipefail
 WS="${WS:-$HOME/catkin_ws}"
 GUI="${GUI:-false}"
 
-kill_list=(gzserver gzclient roscore rosmaster tracker_node move_robot rviz)
+kill_list=(gzserver gzclient roscore rosmaster tracker_node move_robot cmd_vel_circle rviz)
 echo "[INFO] Killing lingering processes: ${kill_list[*]}"
 for p in "${kill_list[@]}"; do
   pkill -9 -f "$p" 2>/dev/null || true

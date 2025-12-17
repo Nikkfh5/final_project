@@ -6,12 +6,10 @@
   <!-- Launch tracker -->
   <include file="$(find tracker_pkg)/launch/tracker.launch"/>
 
-  <!-- Simple circular motion for the demo -->
-  <node name="robot_motion" pkg="sim_pkg" type="move_robot.py" output="screen" required="false">
-    <param name="model_name" value="robot_with_markers"/>
+  <!-- Simple circular motion via cmd_vel (uses planar_move plugin in model.sdf) -->
+  <node name="robot_motion" pkg="sim_pkg" type="cmd_vel_circle.py" output="screen" required="false">
     <param name="radius" value="0.6"/>
     <param name="angular_speed" value="0.35"/>
-    <param name="z" value="0.1"/>
   </node>
   
   <!-- Launch RViz with config -->

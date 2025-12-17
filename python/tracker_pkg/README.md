@@ -48,6 +48,18 @@
    roslaunch tracker_pkg tracker.launch
    ```
 
+3. **Проверить координаты в реальном времени**:
+   ```bash
+   rostopic echo /robot_pose_external -n5
+   rostopic echo /robot_path_external -n3
+   rqt_image_view /debug/image  # картинка с метками
+   ```
+
+4. **Запустить движение по окружности (если не используете demo.launch)**:
+   ```bash
+   rosrun sim_pkg cmd_vel_circle.py radius:=0.6 angular_speed:=0.35
+   ```
+
 Или использовать единый demo launch:
 
 ```bash
@@ -141,6 +153,13 @@ python $(rospack find tracker_pkg)/scripts/offline_visualizer.py trajectory.csv
 
 - `--format {csv,json,auto}` — выбрать формат или дать автодетект по расширению;
 - `--interactive` — добавить слайдер по времени и клик по точкам.
+
+## Проверка, что всё работает
+
+- В `/debug/image` метки подписаны как FOUND, линия между ними есть.
+- `rostopic echo /robot_pose_external` выдаёт координаты (x,y,z, quaternion).
+- `rostopic echo /robot_path_external` выдаёт массив поз траектории.
+- Файл траектории сохраняется при остановке трекера: по умолчанию `~/tracker_logs/trajectory.csv`.
 
 ## Алгоритм преобразования координат
 
