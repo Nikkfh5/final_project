@@ -23,7 +23,9 @@
   <!-- Publish static TF: world -> camera_link -->
   <!-- Камера сверху, смотрит вниз на робота -->
   <node pkg="tf2_ros" type="static_transform_publisher" name="world_to_camera_tf"
-        args="0.0 0.0 3.0 0.0 1.57 0.0 world camera_link"/>
+        args="0 0 3.0 0 1.5708 0 world camera_link"/>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="camera_to_optical_tf"
+        args="0 0 0 -1.570796 0 -1.570796 camera_link camera_link_optical"/>
 
   <!-- Expected topics after launch:
        /camera/image_raw (sensor_msgs/Image)

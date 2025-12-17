@@ -18,6 +18,7 @@ import rospy
 import cv2
 import numpy as np
 import math
+import xml.etree.ElementTree as ET
 from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PoseStamped
@@ -58,6 +59,14 @@ class TrackerNode:
             'height': rospy.get_param('~fallback_camera_intrinsics/height', 480),
             'fov': rospy.get_param('~fallback_camera_intrinsics/fov', 1.047),
         }
+        self.force_fallback_pose = rospy.get_param('~force_fallback_pose', True)
+        self.force_fallback_intrinsics = rospy.get_param('~force_fallback_intrinsics', True)
+        self.disable_distance_check = rospy.get_param('~disable_distance_check', True)
+        self.world_file = rospy.get_param('~world_file', None)
+        self.optical_correction = self._rpy_to_matrix(-math.pi / 2.0, 0.0, -math.pi / 2.0) if self.camera_frame_is_optical else np.eye(3)
+
+        # Optionally load defaults from an SDF world file (no Gazebo needed)
+        self._load_world_camera_defaults()
         
         self.image_topic = rospy.get_param('~image_topic', '/camera/image_raw')
         self.camera_info_topic = rospy.get_param('~camera_info_topic', '/camera/camera_info')
@@ -175,11 +184,85 @@ class TrackerNode:
                        [0, sr, cr]])
         return Rz.dot(Ry).dot(Rx)
 
+    def _load_world_camera_defaults(self):
+        """Load camera pose/intrinsics from SDF world file if provided."""
+        if not self.world_file:
+            rospy.logwarn_once("world_file param not set; using configured fallbacks")
+            return
+
+        try:
+            tree = ET.parse(self.world_file)
+            root = tree.getroot()
+        except Exception as e:
+            rospy.logwarn_once("Failed to parse world_file '%s': %s", self.world_file, str(e))
+            return
+
+        try:
+            camera_model = None
+            for model in root.findall(".//model"):
+                if model.get('name') == 'external_camera':
+                    camera_model = model
+                    break
+
+            if camera_model is None:
+                rospy.logwarn_once("No model named 'external_camera' in world_file '%s'", self.world_file)
+                return
+
+            pose_elem = camera_model.find('pose')
+            if pose_elem is not None and pose_elem.text:
+                parts = pose_elem.text.strip().split()
+                if len(parts) == 6:
+                    vals = list(map(float, parts))
+                    self.fallback_camera_pose.update({
+                        'x': vals[0], 'y': vals[1], 'z': vals[2],
+                        'roll': vals[3], 'pitch': vals[4], 'yaw': vals[5],
+                    })
+
+            camera_sensor = camera_model.find(".//sensor[@type='camera']")
+            if camera_sensor is not None:
+                cam = camera_sensor.find('camera')
+                if cam is not None:
+                    fov_elem = cam.find('horizontal_fov')
+                    if fov_elem is not None and fov_elem.text:
+                        self.fallback_intrinsics['fov'] = float(fov_elem.text)
+                    image_elem = cam.find('image')
+                    if image_elem is not None:
+                        w_elem = image_elem.find('width')
+                        h_elem = image_elem.find('height')
+                        if w_elem is not None and w_elem.text:
+                            self.fallback_intrinsics['width'] = int(w_elem.text)
+                        if h_elem is not None and h_elem.text:
+                            self.fallback_intrinsics['height'] = int(h_elem.text)
+
+            rospy.loginfo_once(
+                "Loaded camera defaults from world_file=%s pose=%s intrinsics=%s",
+                self.world_file, self.fallback_camera_pose, self.fallback_intrinsics
+            )
+        except Exception as e:
+            rospy.logwarn_once("Error extracting camera defaults from '%s': %s", self.world_file, str(e))
+
+    def _apply_optical_correction(self, rotation_matrix):
+        """Apply static optical frame correction when using fallback transforms."""
+        if rotation_matrix is None:
+            return None
+        if not self.camera_frame_is_optical:
+            return rotation_matrix
+        return rotation_matrix.dot(self.optical_correction)
+
     def _get_transform_world_to_camera(self):
         """
         Try to get world->camera transform from TF, otherwise fall back to params.
         Returns (translation ndarray shape (3,), rotation matrix 3x3) or (None, None).
         """
+        if self.force_fallback_pose:
+            t = self.fallback_camera_pose
+            translation = np.array([t['x'], t['y'], t['z']])
+            rotation_matrix = self._apply_optical_correction(
+                self._rpy_to_matrix(t['roll'], t['pitch'], t['yaw'])
+            )
+            rospy.loginfo_once("Using forced fallback camera pose: %s", t)
+            return translation, rotation_matrix
+
         try:
             transform = self.tf_buffer.lookup_transform(
                 self.world_frame, self.camera_frame, rospy.Time())
@@ -202,7 +285,9 @@ class TrackerNode:
         # Fallback to static parameters
         t = self.fallback_camera_pose
         translation = np.array([t['x'], t['y'], t['z']])
-        rotation_matrix = self._rpy_to_matrix(t['roll'], t['pitch'], t['yaw'])
+        rotation_matrix = self._apply_optical_correction(
+            self._rpy_to_matrix(t['roll'], t['pitch'], t['yaw'])
+        )
         rospy.loginfo_once("Using fallback camera pose (no TF): %s", t)
         return translation, rotation_matrix
 
@@ -414,18 +499,27 @@ class TrackerNode:
         Returns:
             (x, y, z) in world frame, or None if transform fails
         """
-        if self.camera_matrix is None:
+        camera_matrix = self.camera_matrix
+        dist_coeffs = self.dist_coeffs
+
+        use_fallback_intrinsics = (
+            self.force_fallback_intrinsics
+            or camera_matrix is None
+            or camera_matrix.shape != (3, 3)
+        )
+        if use_fallback_intrinsics:
             camera_matrix, dist_coeffs = self._build_fallback_camera_matrix()
-            rospy.loginfo_once("Using fallback camera intrinsics (no camera_info received)")
+            rospy.loginfo_once("Using fallback camera intrinsics")
         else:
-            camera_matrix = self.camera_matrix
-            dist_coeffs = self.dist_coeffs
+            if dist_coeffs is None or len(dist_coeffs) == 0:
+                dist_coeffs = np.zeros(5)
         
         rospy.logdebug_once("Camera matrix: %s", camera_matrix)
         
         # Get camera to world transform (TF or fallback)
         translation, rotation_matrix = self._get_transform_world_to_camera()
         if translation is None or rotation_matrix is None:
+            rospy.logwarn_throttle(1.0, "Camera transform is unavailable, skipping frame")
             return None
         
         # Unproject pixel to ray in camera frame
@@ -632,7 +726,7 @@ class TrackerNode:
 
         # Reject detections if marker spacing is implausible
         dist = np.hypot(blue_world[0] - red_world[0], blue_world[1] - red_world[1])
-        if dist < self.min_marker_distance or dist > self.max_marker_distance:
+        if (not self.disable_distance_check) and (dist < self.min_marker_distance or dist > self.max_marker_distance):
             rospy.logwarn_throttle(1.0, "Marker distance out of range: %.3f m (expected %.3f..%.3f)",
                                    dist, self.min_marker_distance, self.max_marker_distance)
             return

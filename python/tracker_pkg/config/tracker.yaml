@@ -2,8 +2,11 @@
 
 # Frame names
 world_frame: "world"
-camera_frame: "camera_link"
+camera_frame: "camera_link_optical"
 camera_frame_is_optical: true
+# world_file: "/home/vboxuser/catkin_ws/src/sim_pkg/worlds/arena.world"
+force_fallback_pose: false
+force_fallback_intrinsics: false
 
 # Ground plane z coordinate
 ground_z: 0.0
