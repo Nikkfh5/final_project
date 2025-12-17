@@ -9,7 +9,6 @@ dist/
 build/
 
 # ROS
-devel/
 build/
 install/
 .catkin_workspace
