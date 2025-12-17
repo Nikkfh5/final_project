@@ -1,0 +1,88 @@
+# Tracker configuration parameters
+
+# Frame names
+world_frame: "world"
+camera_frame: "camera_link_optical"
+camera_frame_is_optical: true
+# world_file: "/home/vboxuser/catkin_ws/src/sim_pkg/worlds/arena.world"
+force_fallback_pose: false
+force_fallback_intrinsics: false
+
+# Ground plane z coordinate
+ground_z: 0.0
+min_marker_distance: 0.05   # m, reject detections when markers almost overlap
+max_marker_distance: 2.0    # m, reject detections when markers too far apart
+enable_pose_smoothing: false
+pose_smoothing_alpha: 0.2
+fallback_camera_pose:
+  x: 0.0
+  y: 0.0
+  z: 3.0
+  roll: 0.0
+  pitch: 1.57
+  yaw: 0.0
+
+fallback_camera_intrinsics:
+  width: 640
+  height: 480
+  fov: 1.047   # ~60 degrees
+
+# Input topics
+image_topic: "/camera/image_raw"
+camera_info_topic: "/camera/camera_info"
+
+# Output topics
+pose_topic: "/robot_pose_external"
+path_topic: "/robot_path_external"
+debug_image_topic: "/debug/image"
+
+# Trajectory logging
+log_trajectory: true
+log_format: "csv"          # "csv" or "json"
+log_file: "~/tracker_logs/trajectory.csv"
+
+# HSV color thresholds for markers
+# Red marker (head)
+# Red in HSV can be around 0 or around 180 (cyclic range)
+# Using very wide thresholds for Gazebo colors
+red_hsv:
+  lower: [0, 20, 20]    # Very wide range for red
+  upper: [20, 255, 255]
+  extra_ranges:
+    - lower: [170, 20, 20]
+      upper: [180, 255, 255]
+
+# Blue marker (tail)
+# Blue is usually in range 100-130, but may be less saturated in Gazebo
+blue_hsv:
+  lower: [90, 20, 20]  # Very low saturation and brightness thresholds
+  upper: [140, 255, 255]
+
+# Processing parameters
+# Reduced minimum area as markers may be small in image
+min_contour_area: 10  # Minimum area for marker detection (pixels) - very low to catch small markers
+max_contour_area: 50000  # Maximum area for marker detection (pixels) - increased
+morph_kernel_size: 5   # Morphology kernel size in pixels
+
+# Fallback based on raw BGR dominance (helps in Gazebo lighting)
+enable_channel_fallback: true
+red_channel_min: 60
+red_channel_margin: 10
+blue_channel_min: 60
+blue_channel_margin: 10
+enable_circle_fallback: true
+circle_min_radius: 5
+circle_max_radius: 80
+circle_min_distance: 30
+circle_dp: 1.2
+circle_param1: 100
+circle_param2: 15
+circle_color_margin: 5
+circle_blur_kernel: 7
+
+# Frame skipping (process every N-th frame, 1 = process every frame)
+frame_skip: 1
+
+# Interpolation when markers are lost
+enable_interpolation: true
+max_lost_frames: 10  # Maximum number of frames to interpolate when markers are lost

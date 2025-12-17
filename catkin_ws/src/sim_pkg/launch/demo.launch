@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Launch simulation -->
+  <include file="$(find sim_pkg)/launch/sim.launch"/>
+  
+  <!-- Launch tracker -->
+  <include file="$(find tracker_pkg)/launch/tracker.launch"/>
+
+  <!-- Simple circular motion via cmd_vel (uses planar_move plugin in model.sdf) -->
+  <node name="robot_motion" pkg="sim_pkg" type="cmd_vel_circle.py" output="screen" required="false">
+    <param name="radius" value="0.6"/>
+    <param name="angular_speed" value="0.35"/>
+  </node>
+  
+  <!-- Launch RViz with config -->
+  <node name="rviz" pkg="rviz" type="rviz" 
+        args="-d $(find tracker_pkg)/rviz/tracker.rviz" 
+        output="screen" required="false"/>
+  
+  <!-- Expected topics after launch:
+       /camera/image_raw
+       /camera/camera_info
+       /robot_pose_external
+       /robot_path_external
+       /debug/image
+  -->
+</launch>
