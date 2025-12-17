@@ -6,10 +6,18 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   sensor_msgs
   gazebo_ros
+  rospy
+  geometry_msgs
+  gazebo_msgs
 )
 
 catkin_package(
-  CATKIN_DEPENDS roscpp std_msgs sensor_msgs gazebo_ros
+  CATKIN_DEPENDS roscpp std_msgs sensor_msgs gazebo_ros rospy geometry_msgs gazebo_msgs
+)
+
+catkin_install_python(PROGRAMS
+  scripts/move_robot.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
 # Install launch files
@@ -29,4 +37,3 @@ install(DIRECTORY models/
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/models
   PATTERN ".svn" EXCLUDE
 )
-

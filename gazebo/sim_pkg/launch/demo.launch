@@ -5,6 +5,14 @@
   
   <!-- Launch tracker -->
   <include file="$(find tracker_pkg)/launch/tracker.launch"/>
+
+  <!-- Simple circular motion for the demo -->
+  <node name="robot_motion" pkg="sim_pkg" type="move_robot.py" output="screen" required="false">
+    <param name="model_name" value="robot_with_markers"/>
+    <param name="radius" value="0.6"/>
+    <param name="angular_speed" value="0.35"/>
+    <param name="z" value="0.1"/>
+  </node>
   
   <!-- Launch RViz with config -->
   <node name="rviz" pkg="rviz" type="rviz" 
