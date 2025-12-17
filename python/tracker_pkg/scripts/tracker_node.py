@@ -380,7 +380,7 @@ class TrackerNode:
         
         # Normalized image coordinates
         x_norm = (u_undist - cx) / fx
-        y_norm = (v_undist - cy) / fy
+        y_norm = -(v_undist - cy) / fy
         
         # Ray direction in camera optical frame (z = 1 for normalized coordinates)
         ray_dir_camera = np.array([x_norm, y_norm, 1.0])
