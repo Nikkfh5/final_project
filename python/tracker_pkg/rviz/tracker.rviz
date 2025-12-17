@@ -89,6 +89,18 @@ Visualization Manager:
       Topic: /robot_pose_external
       Unreliable: false
       Value: true
+    - Class: rviz/Image
+      Enabled: true
+      Image Topic: /debug/image
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: DebugImage
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: raw
+      Unreliable: false
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -153,4 +165,3 @@ Window Geometry:
   Width: 1278
   X: 72
   Y: 27
-

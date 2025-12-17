@@ -17,6 +17,7 @@ import csv
 import rospy
 import cv2
 import numpy as np
+import math
 from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PoseStamped
@@ -44,6 +45,19 @@ class TrackerNode:
         self.max_marker_distance = rospy.get_param('~max_marker_distance', 2.0)
         self.enable_pose_smoothing = rospy.get_param('~enable_pose_smoothing', False)
         self.pose_smoothing_alpha = rospy.get_param('~pose_smoothing_alpha', 0.2)
+        self.fallback_camera_pose = {
+            'x': rospy.get_param('~fallback_camera_pose/x', 0.0),
+            'y': rospy.get_param('~fallback_camera_pose/y', 0.0),
+            'z': rospy.get_param('~fallback_camera_pose/z', 3.0),
+            'roll': rospy.get_param('~fallback_camera_pose/roll', 0.0),
+            'pitch': rospy.get_param('~fallback_camera_pose/pitch', 1.57),
+            'yaw': rospy.get_param('~fallback_camera_pose/yaw', 0.0),
+        }
+        self.fallback_intrinsics = {
+            'width': rospy.get_param('~fallback_camera_intrinsics/width', 640),
+            'height': rospy.get_param('~fallback_camera_intrinsics/height', 480),
+            'fov': rospy.get_param('~fallback_camera_intrinsics/fov', 1.047),
+        }
         
         self.image_topic = rospy.get_param('~image_topic', '/camera/image_raw')
         self.camera_info_topic = rospy.get_param('~camera_info_topic', '/camera/camera_info')
@@ -99,15 +113,6 @@ class TrackerNode:
         self.camera_matrix = None
         self.dist_coeffs = None
         
-        # Rotation from ROS optical frame (z-forward, x-right, y-down)
-        # to Gazebo/RViz camera_link (x-forward, y-left, z-up).
-        # Needed when the provided TF describes the x-forward convention.
-        self.optical_to_camera_matrix = np.array([
-            [0.0, 0.0, 1.0],
-            [-1.0, 0.0, 0.0],
-            [0.0, -1.0, 0.0]
-        ])
-
         if not self.camera_frame_is_optical:
             rospy.loginfo("camera_frame '%s' is treated as x-forward (Gazebo-style); applying optical correction",
                           self.camera_frame)
@@ -152,6 +157,68 @@ class TrackerNode:
             rospy.logwarn("Camera info not received within timeout, continuing anyway...")
         
         rospy.loginfo("Tracker node initialized")
+
+    def _rpy_to_matrix(self, roll, pitch, yaw):
+        """Convert roll, pitch, yaw to rotation matrix (Rz * Ry * Rx)."""
+        cy, sy = math.cos(yaw), math.sin(yaw)
+        cp, sp = math.cos(pitch), math.sin(pitch)
+        cr, sr = math.cos(roll), math.sin(roll)
+
+        Rz = np.array([[cy, -sy, 0],
+                       [sy, cy, 0],
+                       [0, 0, 1]])
+        Ry = np.array([[cp, 0, sp],
+                       [0, 1, 0],
+                       [-sp, 0, cp]])
+        Rx = np.array([[1, 0, 0],
+                       [0, cr, -sr],
+                       [0, sr, cr]])
+        return Rz.dot(Ry).dot(Rx)
+
+    def _get_transform_world_to_camera(self):
+        """
+        Try to get world->camera transform from TF, otherwise fall back to params.
+        Returns (translation ndarray shape (3,), rotation matrix 3x3) or (None, None).
+        """
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                self.world_frame, self.camera_frame, rospy.Time())
+            quat = transform.transform.rotation
+            qx, qy, qz, qw = quat.x, quat.y, quat.z, quat.w
+            rotation_matrix = np.array([
+                [1 - 2*(qy*qy + qz*qz), 2*(qx*qy - qw*qz), 2*(qx*qz + qw*qy)],
+                [2*(qx*qy + qw*qz), 1 - 2*(qx*qx + qz*qz), 2*(qy*qz - qw*qx)],
+                [2*(qx*qz - qw*qy), 2*(qy*qz + qw*qx), 1 - 2*(qx*qx + qy*qy)]
+            ])
+            translation = np.array([
+                transform.transform.translation.x,
+                transform.transform.translation.y,
+                transform.transform.translation.z
+            ])
+            return translation, rotation_matrix
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
+            rospy.logwarn_throttle(1.0, "TF lookup failed, using fallback camera pose: %s", str(e))
+
+        # Fallback to static parameters
+        t = self.fallback_camera_pose
+        translation = np.array([t['x'], t['y'], t['z']])
+        rotation_matrix = self._rpy_to_matrix(t['roll'], t['pitch'], t['yaw'])
+        rospy.loginfo_once("Using fallback camera pose (no TF): %s", t)
+        return translation, rotation_matrix
+
+    def _build_fallback_camera_matrix(self):
+        """Build a simple pinhole camera matrix from fallback intrinsics."""
+        width = float(self.fallback_intrinsics.get('width', 640.0))
+        height = float(self.fallback_intrinsics.get('height', 480.0))
+        fov = float(self.fallback_intrinsics.get('fov', 1.047))
+        fx = fy = width / (2.0 * math.tan(fov / 2.0))
+        cx = width / 2.0
+        cy = height / 2.0
+        K = np.array([[fx, 0.0, cx],
+                      [0.0, fy, cy],
+                      [0.0, 0.0, 1.0]])
+        dist = np.zeros(5)
+        return K, dist
         
     def camera_info_callback(self, msg):
         """Store camera intrinsics from CameraInfo message."""
@@ -348,32 +415,31 @@ class TrackerNode:
             (x, y, z) in world frame, or None if transform fails
         """
         if self.camera_matrix is None:
-            rospy.logwarn_throttle(5.0, "Camera matrix not yet initialized, waiting for camera_info...")
-            return None
+            camera_matrix, dist_coeffs = self._build_fallback_camera_matrix()
+            rospy.loginfo_once("Using fallback camera intrinsics (no camera_info received)")
+        else:
+            camera_matrix = self.camera_matrix
+            dist_coeffs = self.dist_coeffs
         
-        rospy.logdebug_once("Camera matrix: %s", self.camera_matrix)
+        rospy.logdebug_once("Camera matrix: %s", camera_matrix)
         
-        # Get camera to world transform
-        try:
-            transform = self.tf_buffer.lookup_transform(
-                self.world_frame, self.camera_frame, rospy.Time())
-            rospy.logdebug_once("TF transform found: world -> camera_link")
-        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
-            rospy.logwarn_throttle(1.0, "TF lookup failed: %s", str(e))
+        # Get camera to world transform (TF or fallback)
+        translation, rotation_matrix = self._get_transform_world_to_camera()
+        if translation is None or rotation_matrix is None:
             return None
         
         # Unproject pixel to ray in camera frame
         # Ray direction in camera frame (normalized)
-        fx = self.camera_matrix[0, 0]
-        fy = self.camera_matrix[1, 1]
-        cx = self.camera_matrix[0, 2]
-        cy = self.camera_matrix[1, 2]
+        fx = camera_matrix[0, 0]
+        fy = camera_matrix[1, 1]
+        cx = camera_matrix[0, 2]
+        cy = camera_matrix[1, 2]
         
         # Undistort pixel coordinates if distortion coefficients are available
-        if self.dist_coeffs is not None and len(self.dist_coeffs) > 0:
+        if dist_coeffs is not None and len(dist_coeffs) > 0:
             # Undistort the point
             pts = np.array([[[u, v]]], dtype=np.float32)
-            undistorted = cv2.undistortPoints(pts, self.camera_matrix, self.dist_coeffs, P=self.camera_matrix)
+            undistorted = cv2.undistortPoints(pts, camera_matrix, dist_coeffs, P=camera_matrix)
             u_undist, v_undist = undistorted[0, 0]
         else:
             u_undist, v_undist = u, v
@@ -385,31 +451,21 @@ class TrackerNode:
         # Ray direction in camera optical frame (z = 1 for normalized coordinates)
         ray_dir_camera = np.array([x_norm, y_norm, 1.0])
         ray_dir_camera = ray_dir_camera / np.linalg.norm(ray_dir_camera)
-
-        # Gazebo publishes camera_link with x-forward. Convert normalized ray
-        # from optical conventions when requested.
-        if not self.camera_frame_is_optical:
-            ray_dir_camera = self.optical_to_camera_matrix.dot(ray_dir_camera)
-            ray_dir_camera = ray_dir_camera / np.linalg.norm(ray_dir_camera)
         
         # Transform ray direction to world frame
-        # Extract rotation matrix from transform quaternion
-        quat = transform.transform.rotation
-        # Convert quaternion to rotation matrix
-        qx, qy, qz, qw = quat.x, quat.y, quat.z, quat.w
-        rotation_matrix = np.array([
-            [1 - 2*(qy*qy + qz*qz), 2*(qx*qy - qw*qz), 2*(qx*qz + qw*qy)],
-            [2*(qx*qy + qw*qz), 1 - 2*(qx*qx + qz*qz), 2*(qy*qz - qw*qx)],
-            [2*(qx*qz - qw*qy), 2*(qy*qz + qw*qx), 1 - 2*(qx*qx + qy*qy)]
-        ])
         ray_dir_world = rotation_matrix.dot(ray_dir_camera)
+
+        # Ensure the ray points toward the ground; flip if z is upward
+        if ray_dir_world[2] >= 0.0:
+            ray_dir_world *= -1
+            rospy.logwarn_once("Ray direction flipped downward because it was pointing up (using fallback pose)")
+            rospy.loginfo_once("Ray direction flipped downward because it was pointing up (using fallback pose)")
         
         # Camera position in world frame
-        cam_pos_world = np.array([
-            transform.transform.translation.x,
-            transform.transform.translation.y,
-            transform.transform.translation.z
-        ])
+        cam_pos_world = translation
+
+        # Log once to verify ray points downward
+        rospy.loginfo_once("Ray dir world: %s, cam pos world: %s", ray_dir_world, cam_pos_world)
         
         # Intersect ray with ground plane z = ground_z
         # Ray: P = cam_pos_world + t * ray_dir_world
@@ -421,7 +477,12 @@ class TrackerNode:
         t = (self.ground_z - cam_pos_world[2]) / ray_dir_world[2]
         
         if t < 0:
-            return None  # Ray pointing away from ground
+            ray_dir_world *= -1
+            if abs(ray_dir_world[2]) < 1e-6:
+                return None
+            t = (self.ground_z - cam_pos_world[2]) / ray_dir_world[2]
+            if t < 0:
+                return None  # Ray still pointing away from ground
         
         point_world = cam_pos_world + t * ray_dir_world
         
@@ -429,6 +490,8 @@ class TrackerNode:
     
     def image_callback(self, msg):
         """Process incoming image and publish robot pose."""
+        if rospy.is_shutdown():
+            return
         # Frame skipping: process only every N-th frame
         self.frame_counter += 1
         if self.frame_counter < self.frame_skip:
@@ -494,10 +557,18 @@ class TrackerNode:
                     pose_msg.header.frame_id = self.world_frame
                     pose_msg.pose = self.last_valid_pose
                     
-                    self.pose_pub.publish(pose_msg)
+                    try:
+                        self.pose_pub.publish(pose_msg)
+                    except rospy.ROSException:
+                        if rospy.is_shutdown():
+                            return
                     self.path.header.stamp = rospy.Time.now()
                     self.path.poses.append(pose_msg)
-                    self.path_pub.publish(self.path)
+                    try:
+                        self.path_pub.publish(self.path)
+                    except rospy.ROSException:
+                        if rospy.is_shutdown():
+                            return
                     
                     if self.log_trajectory:
                         # Extract pose data for logging
@@ -522,7 +593,11 @@ class TrackerNode:
             try:
                 debug_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
                 debug_msg.header = msg.header  # Сохраняем header от исходного сообщения
-                self.debug_image_pub.publish(debug_msg)
+                try:
+                    self.debug_image_pub.publish(debug_msg)
+                except rospy.ROSException:
+                    if rospy.is_shutdown():
+                        return
             except CvBridgeError as e:
                 rospy.logerr("Failed to publish debug image: %s", str(e))
             return
@@ -546,7 +621,11 @@ class TrackerNode:
             try:
                 debug_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
                 debug_msg.header = msg.header
-                self.debug_image_pub.publish(debug_msg)
+                try:
+                    self.debug_image_pub.publish(debug_msg)
+                except rospy.ROSException:
+                    if rospy.is_shutdown():
+                        return
             except CvBridgeError as e:
                 rospy.logerr("Failed to publish debug image: %s", str(e))
             return
@@ -601,12 +680,20 @@ class TrackerNode:
         if self.enable_interpolation:
             self.last_valid_pose = pose_msg.pose
         
-        self.pose_pub.publish(pose_msg)
+        try:
+            self.pose_pub.publish(pose_msg)
+        except rospy.ROSException:
+            if rospy.is_shutdown():
+                return
         
         # Update path
         self.path.header.stamp = rospy.Time.now()
         self.path.poses.append(pose_msg)
-        self.path_pub.publish(self.path)
+        try:
+            self.path_pub.publish(self.path)
+        except rospy.ROSException:
+            if rospy.is_shutdown():
+                return
 
         if self.log_trajectory:
             self.logged_points.append({
@@ -622,7 +709,11 @@ class TrackerNode:
         try:
             debug_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
             debug_msg.header = msg.header  # Сохраняем header от исходного сообщения
-            self.debug_image_pub.publish(debug_msg)
+            try:
+                self.debug_image_pub.publish(debug_msg)
+            except rospy.ROSException:
+                if rospy.is_shutdown():
+                    return
         except CvBridgeError as e:
             rospy.logerr("Failed to publish debug image: %s", str(e))
 

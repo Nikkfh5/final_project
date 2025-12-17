@@ -10,6 +10,11 @@
   <node name="rviz" pkg="rviz" type="rviz" 
         args="-d $(find tracker_pkg)/rviz/tracker.rviz" 
         output="screen" required="false"/>
+
+  <!-- Show debug image automatically -->
+  <node name="debug_image_view" pkg="rqt_image_view" type="rqt_image_view"
+        args="/debug/image"
+        output="screen" required="false"/>
   
   <!-- Expected topics after launch:
        /camera/image_raw
@@ -19,4 +24,3 @@
        /debug/image
   -->
 </launch>
-

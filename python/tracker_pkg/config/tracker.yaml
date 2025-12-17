@@ -3,7 +3,7 @@
 # Frame names
 world_frame: "world"
 camera_frame: "camera_link"
-camera_frame_is_optical: false
+camera_frame_is_optical: true
 
 # Ground plane z coordinate
 ground_z: 0.0
@@ -11,6 +11,18 @@ min_marker_distance: 0.05   # m, reject detections when markers almost overlap
 max_marker_distance: 2.0    # m, reject detections when markers too far apart
 enable_pose_smoothing: false
 pose_smoothing_alpha: 0.2
+fallback_camera_pose:
+  x: 0.0
+  y: 0.0
+  z: 3.0
+  roll: 0.0
+  pitch: 1.57
+  yaw: 0.0
+
+fallback_camera_intrinsics:
+  width: 640
+  height: 480
+  fov: 1.047   # ~60 degrees
 
 # Input topics
 image_topic: "/camera/image_raw"
