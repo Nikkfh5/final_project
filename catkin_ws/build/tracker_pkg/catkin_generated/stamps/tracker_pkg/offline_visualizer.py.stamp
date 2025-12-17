@@ -104,7 +104,7 @@ def read_json_trajectory(filename):
     return np.array(times), np.array(x), np.array(y), np.array(theta), frame_array
 
 
-def visualize_trajectory(times, x, y, theta, interactive=False, frame_numbers=None):
+def visualize_trajectory(times, x, y, theta, interactive=False, frame_numbers=None, output_path=None, dpi=200):
     """
     Visualize trajectory as 2D plot.
     
@@ -115,6 +115,8 @@ def visualize_trajectory(times, x, y, theta, interactive=False, frame_numbers=No
         theta: Orientations (radians)
         interactive: If True, add time slider and interactive click-to-select
         frame_numbers: Optional array of frame numbers for each point
+        output_path: If set, save figure to this file instead of showing GUI
+        dpi: Output DPI when saving
     """
     if len(times) == 0:
         print("No points to visualize.")
@@ -189,7 +191,11 @@ def visualize_trajectory(times, x, y, theta, interactive=False, frame_numbers=No
         update_marker(0)
     
     plt.tight_layout()
-    plt.show()
+    if output_path:
+        fig.savefig(output_path, dpi=dpi)
+        print(f"Saved figure to {output_path}")
+    else:
+        plt.show()
 
 
 def main():
@@ -199,6 +205,8 @@ def main():
                        default='auto', help='File format (auto-detect if not specified)')
     parser.add_argument('--interactive', action='store_true',
                        help='Enable interactive slider and click-to-select point')
+    parser.add_argument('--output', type=str, help='Path to save PNG (no GUI). If set, figure is saved and window is not shown.')
+    parser.add_argument('--dpi', type=int, default=200, help='DPI for saved PNG')
     
     args = parser.parse_args()
     
@@ -235,7 +243,20 @@ def main():
         print("Frame numbers available: %d frames" % len(valid_frames))
     
     # Visualize
-    visualize_trajectory(times, x, y, theta, interactive=args.interactive, frame_numbers=frames)
+    # Switch to headless backend when saving without GUI
+    if args.output and not args.interactive:
+        plt.switch_backend('Agg')
+
+    visualize_trajectory(
+        times,
+        x,
+        y,
+        theta,
+        interactive=args.interactive,
+        frame_numbers=frames,
+        output_path=args.output,
+        dpi=args.dpi,
+    )
 
 
 if __name__ == '__main__':
