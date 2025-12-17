@@ -43,10 +43,10 @@ RM = /usr/bin/cmake -E remove -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/vboxuser/Documents/final_project/catkin_ws/src
+CMAKE_SOURCE_DIR = /home/vboxuser/final_project/catkin_ws/src
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/vboxuser/Documents/final_project/catkin_ws/build
+CMAKE_BINARY_DIR = /home/vboxuser/final_project/catkin_ws/build
 
 # Utility rule file for nav_msgs_generate_messages_py.
 
@@ -63,10 +63,10 @@ tracker_pkg/CMakeFiles/nav_msgs_generate_messages_py.dir/build: nav_msgs_generat
 .PHONY : tracker_pkg/CMakeFiles/nav_msgs_generate_messages_py.dir/build
 
 tracker_pkg/CMakeFiles/nav_msgs_generate_messages_py.dir/clean:
-	cd /home/vboxuser/Documents/final_project/catkin_ws/build/tracker_pkg && $(CMAKE_COMMAND) -P CMakeFiles/nav_msgs_generate_messages_py.dir/cmake_clean.cmake
+	cd /home/vboxuser/final_project/catkin_ws/build/tracker_pkg && $(CMAKE_COMMAND) -P CMakeFiles/nav_msgs_generate_messages_py.dir/cmake_clean.cmake
 .PHONY : tracker_pkg/CMakeFiles/nav_msgs_generate_messages_py.dir/clean
 
 tracker_pkg/CMakeFiles/nav_msgs_generate_messages_py.dir/depend:
-	cd /home/vboxuser/Documents/final_project/catkin_ws/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/vboxuser/Documents/final_project/catkin_ws/src /home/vboxuser/Documents/final_project/catkin_ws/src/tracker_pkg /home/vboxuser/Documents/final_project/catkin_ws/build /home/vboxuser/Documents/final_project/catkin_ws/build/tracker_pkg /home/vboxuser/Documents/final_project/catkin_ws/build/tracker_pkg/CMakeFiles/nav_msgs_generate_messages_py.dir/DependInfo.cmake --color=$(COLOR)
+	cd /home/vboxuser/final_project/catkin_ws/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/vboxuser/final_project/catkin_ws/src /home/vboxuser/final_project/catkin_ws/src/tracker_pkg /home/vboxuser/final_project/catkin_ws/build /home/vboxuser/final_project/catkin_ws/build/tracker_pkg /home/vboxuser/final_project/catkin_ws/build/tracker_pkg/CMakeFiles/nav_msgs_generate_messages_py.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : tracker_pkg/CMakeFiles/nav_msgs_generate_messages_py.dir/depend
 

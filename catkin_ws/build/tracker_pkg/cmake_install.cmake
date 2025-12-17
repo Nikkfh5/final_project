@@ -1,8 +1,8 @@
-# Install script for directory: /home/vboxuser/Documents/final_project/catkin_ws/src/tracker_pkg
+# Install script for directory: /home/vboxuser/final_project/catkin_ws/src/tracker_pkg
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "/home/vboxuser/Documents/final_project/catkin_ws/install")
+  set(CMAKE_INSTALL_PREFIX "/home/vboxuser/final_project/catkin_ws/install")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
@@ -38,41 +38,41 @@ if(NOT DEFINED CMAKE_CROSSCOMPILING)
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES "/home/vboxuser/Documents/final_project/catkin_ws/build/tracker_pkg/catkin_generated/installspace/tracker_pkg.pc")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES "/home/vboxuser/final_project/catkin_ws/build/tracker_pkg/catkin_generated/installspace/tracker_pkg.pc")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/tracker_pkg/cmake" TYPE FILE FILES
-    "/home/vboxuser/Documents/final_project/catkin_ws/build/tracker_pkg/catkin_generated/installspace/tracker_pkgConfig.cmake"
-    "/home/vboxuser/Documents/final_project/catkin_ws/build/tracker_pkg/catkin_generated/installspace/tracker_pkgConfig-version.cmake"
+    "/home/vboxuser/final_project/catkin_ws/build/tracker_pkg/catkin_generated/installspace/tracker_pkgConfig.cmake"
+    "/home/vboxuser/final_project/catkin_ws/build/tracker_pkg/catkin_generated/installspace/tracker_pkgConfig-version.cmake"
     )
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/tracker_pkg" TYPE FILE FILES "/home/vboxuser/Documents/final_project/catkin_ws/src/tracker_pkg/package.xml")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/tracker_pkg" TYPE FILE FILES "/home/vboxuser/final_project/catkin_ws/src/tracker_pkg/package.xml")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/tracker_pkg" TYPE PROGRAM FILES "/home/vboxuser/Documents/final_project/catkin_ws/build/tracker_pkg/catkin_generated/installspace/tracker_node.py")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/tracker_pkg" TYPE PROGRAM FILES "/home/vboxuser/final_project/catkin_ws/build/tracker_pkg/catkin_generated/installspace/tracker_node.py")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/tracker_pkg" TYPE PROGRAM FILES "/home/vboxuser/Documents/final_project/catkin_ws/build/tracker_pkg/catkin_generated/installspace/offline_visualizer.py")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/tracker_pkg" TYPE PROGRAM FILES "/home/vboxuser/final_project/catkin_ws/build/tracker_pkg/catkin_generated/installspace/offline_visualizer.py")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/tracker_pkg" TYPE PROGRAM FILES "/home/vboxuser/Documents/final_project/catkin_ws/build/tracker_pkg/catkin_generated/installspace/process_image_sequence.py")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/tracker_pkg" TYPE PROGRAM FILES "/home/vboxuser/final_project/catkin_ws/build/tracker_pkg/catkin_generated/installspace/process_image_sequence.py")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/tracker_pkg/launch" TYPE DIRECTORY FILES "/home/vboxuser/Documents/final_project/catkin_ws/src/tracker_pkg/launch/" REGEX "/\\.svn$" EXCLUDE)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/tracker_pkg/launch" TYPE DIRECTORY FILES "/home/vboxuser/final_project/catkin_ws/src/tracker_pkg/launch/" REGEX "/\\.svn$" EXCLUDE)
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/tracker_pkg/config" TYPE DIRECTORY FILES "/home/vboxuser/Documents/final_project/catkin_ws/src/tracker_pkg/config/" REGEX "/\\.svn$" EXCLUDE)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/tracker_pkg/config" TYPE DIRECTORY FILES "/home/vboxuser/final_project/catkin_ws/src/tracker_pkg/config/" REGEX "/\\.svn$" EXCLUDE)
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/tracker_pkg/rviz" TYPE DIRECTORY FILES "/home/vboxuser/Documents/final_project/catkin_ws/src/tracker_pkg/rviz/" REGEX "/\\.svn$" EXCLUDE)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/tracker_pkg/rviz" TYPE DIRECTORY FILES "/home/vboxuser/final_project/catkin_ws/src/tracker_pkg/rviz/" REGEX "/\\.svn$" EXCLUDE)
 endif()
 

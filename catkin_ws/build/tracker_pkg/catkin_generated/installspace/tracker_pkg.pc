@@ -1,4 +1,4 @@
-prefix=/home/vboxuser/Documents/final_project/catkin_ws/install
+prefix=/home/vboxuser/final_project/catkin_ws/install
 
 Name: tracker_pkg
 Description: Description of tracker_pkg

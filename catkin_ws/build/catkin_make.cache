@@ -1,2 +1,2 @@
 sim_pkg:tracker_pkg
--DCATKIN_DEVEL_PREFIX=/home/vboxuser/Documents/final_project/catkin_ws/devel -DCMAKE_INSTALL_PREFIX=/home/vboxuser/Documents/final_project/catkin_ws/install -G Unix Makefiles
+-DCATKIN_DEVEL_PREFIX=/home/vboxuser/final_project/catkin_ws/devel -DCMAKE_INSTALL_PREFIX=/home/vboxuser/final_project/catkin_ws/install -G Unix Makefiles

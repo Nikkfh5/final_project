@@ -1,6 +1,6 @@
 # CMake generated Testfile for 
-# Source directory: /home/vboxuser/Documents/final_project/catkin_ws/src/tracker_pkg
-# Build directory: /home/vboxuser/Documents/final_project/catkin_ws/build/tracker_pkg
+# Source directory: /home/vboxuser/final_project/catkin_ws/src/tracker_pkg
+# Build directory: /home/vboxuser/final_project/catkin_ws/build/tracker_pkg
 # 
 # This file includes the relevant testing commands required for 
 # testing this directory and lists subdirectories to be tested as well.

@@ -1,8 +1,8 @@
-# Install script for directory: /home/vboxuser/Documents/final_project/catkin_ws/src/sim_pkg
+# Install script for directory: /home/vboxuser/final_project/catkin_ws/src/sim_pkg
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "/home/vboxuser/Documents/final_project/catkin_ws/install")
+  set(CMAKE_INSTALL_PREFIX "/home/vboxuser/final_project/catkin_ws/install")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
@@ -38,37 +38,37 @@ if(NOT DEFINED CMAKE_CROSSCOMPILING)
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES "/home/vboxuser/Documents/final_project/catkin_ws/build/sim_pkg/catkin_generated/installspace/sim_pkg.pc")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES "/home/vboxuser/final_project/catkin_ws/build/sim_pkg/catkin_generated/installspace/sim_pkg.pc")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/sim_pkg/cmake" TYPE FILE FILES
-    "/home/vboxuser/Documents/final_project/catkin_ws/build/sim_pkg/catkin_generated/installspace/sim_pkgConfig.cmake"
-    "/home/vboxuser/Documents/final_project/catkin_ws/build/sim_pkg/catkin_generated/installspace/sim_pkgConfig-version.cmake"
+    "/home/vboxuser/final_project/catkin_ws/build/sim_pkg/catkin_generated/installspace/sim_pkgConfig.cmake"
+    "/home/vboxuser/final_project/catkin_ws/build/sim_pkg/catkin_generated/installspace/sim_pkgConfig-version.cmake"
     )
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/sim_pkg" TYPE FILE FILES "/home/vboxuser/Documents/final_project/catkin_ws/src/sim_pkg/package.xml")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/sim_pkg" TYPE FILE FILES "/home/vboxuser/final_project/catkin_ws/src/sim_pkg/package.xml")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/sim_pkg" TYPE PROGRAM FILES "/home/vboxuser/Documents/final_project/catkin_ws/build/sim_pkg/catkin_generated/installspace/move_robot.py")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/sim_pkg" TYPE PROGRAM FILES "/home/vboxuser/final_project/catkin_ws/build/sim_pkg/catkin_generated/installspace/move_robot.py")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/sim_pkg" TYPE PROGRAM FILES "/home/vboxuser/Documents/final_project/catkin_ws/build/sim_pkg/catkin_generated/installspace/cmd_vel_circle.py")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/sim_pkg" TYPE PROGRAM FILES "/home/vboxuser/final_project/catkin_ws/build/sim_pkg/catkin_generated/installspace/cmd_vel_circle.py")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/sim_pkg/launch" TYPE DIRECTORY FILES "/home/vboxuser/Documents/final_project/catkin_ws/src/sim_pkg/launch/" REGEX "/\\.svn$" EXCLUDE)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/sim_pkg/launch" TYPE DIRECTORY FILES "/home/vboxuser/final_project/catkin_ws/src/sim_pkg/launch/" REGEX "/\\.svn$" EXCLUDE)
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/sim_pkg/worlds" TYPE DIRECTORY FILES "/home/vboxuser/Documents/final_project/catkin_ws/src/sim_pkg/worlds/" REGEX "/\\.svn$" EXCLUDE)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/sim_pkg/worlds" TYPE DIRECTORY FILES "/home/vboxuser/final_project/catkin_ws/src/sim_pkg/worlds/" REGEX "/\\.svn$" EXCLUDE)
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/sim_pkg/models" TYPE DIRECTORY FILES "/home/vboxuser/Documents/final_project/catkin_ws/src/sim_pkg/models/" REGEX "/\\.svn$" EXCLUDE)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/sim_pkg/models" TYPE DIRECTORY FILES "/home/vboxuser/final_project/catkin_ws/src/sim_pkg/models/" REGEX "/\\.svn$" EXCLUDE)
 endif()
 

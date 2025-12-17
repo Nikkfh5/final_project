@@ -1,4 +1,4 @@
-prefix=/home/vboxuser/Documents/final_project/catkin_ws/devel
+prefix=/home/vboxuser/final_project/catkin_ws/devel
 
 Name: sim_pkg
 Description: Description of sim_pkg
