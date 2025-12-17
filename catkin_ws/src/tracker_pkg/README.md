@@ -66,6 +66,29 @@
 roslaunch sim_pkg demo.launch
 ```
 
+### Быстрый запуск для любого пользователя (в корне репозитория)
+
+```bash
+./run_demo.sh
+```
+
+Скрипт сам:
+- создаёт `tracker_logs` рядом с проектом;
+- гасит старые `gzserver/gzclient/roscore`;
+- загружает `catkin_ws/devel/setup.bash`;
+- запускает `roslaunch sim_pkg demo.launch` с включённой записью.
+
+Где искать результаты:
+- JSON: `tracker_logs/trajectory.json`
+- PNG:  `tracker_logs/trajectory.png`
+
+Остановить запись вручную (если нужно раньше времени):
+```bash
+cd /path/to/your/clone/final_project/catkin_ws
+source devel/setup.bash
+rosservice call /tracker_node/stop_logging
+```
+
 ### Проверка работы
 
 1. **Проверить топики**:
@@ -107,8 +130,11 @@ roslaunch sim_pkg demo.launch
    rqt_image_view /debug/image
    ```
 
-6. **Сохранить траекторию** (включено по умолчанию):
-   - В `config/tracker.yaml` можно включить/выключить логирование (`log_trajectory`), выбрать формат (`log_format: csv|json`) и путь (`log_file`). При остановке ноды файл будет сохранён.
+6. **Сохранить траекторию**:
+   - Формат по умолчанию — JSON (`log_format: json`, путь задаётся в `log_file`).
+   - Включить запись: `rosservice call /tracker_node/start_logging`
+   - Остановить и сохранить (JSON + PNG): `rosservice call /tracker_node/stop_logging`
+   - PNG путь задаётся `png_output` (если пусто, берётся имя `log_file` с суффиксом `.png`).
 
 ### Работа с rosbag (TODO)
 
@@ -137,6 +163,8 @@ roslaunch sim_pkg demo.launch
 - **min/max_marker_distance** — допустимая дистанция между метками для отбрасывания ложных срабатываний
 - **enable_pose_smoothing / pose_smoothing_alpha** — сглаживание позы (экспоненциальное)
 - **log_trajectory / log_format / log_file** — логирование траектории (csv/json) на shutdown
+- **logging_initially_on** — начинать запись сразу при старте ноды
+- **png_output / png_dpi** — автоматический PNG при остановке записи
 - **Логирование траектории**: `log_trajectory`, `log_format`, `log_file`
 
 ## Оффлайн визуализация

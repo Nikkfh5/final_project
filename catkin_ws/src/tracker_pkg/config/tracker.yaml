@@ -36,10 +36,13 @@ pose_topic: "/robot_pose_external"
 path_topic: "/robot_path_external"
 debug_image_topic: "/debug/image"
 
-# Trajectory logging
+# Trajectory logging (defaults can be overridden from launch)
 log_trajectory: true
-log_format: "csv"          # "csv" or "json"
-log_file: "~/tracker_logs/trajectory.csv"
+log_format: "json"          # "csv" or "json"
+log_file: "~/tracker_logs/trajectory.json"
+logging_initially_on: false # запись начнется после вызова start_logging
+png_output: "~/tracker_logs/trajectory.png"
+png_dpi: 200
 
 # HSV color thresholds for markers
 # Red marker (head)

@@ -19,16 +19,21 @@ import cv2
 import numpy as np
 import math
 import xml.etree.ElementTree as ET
+import matplotlib
+
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
+from std_srvs.srv import Trigger, TriggerResponse
 import tf2_ros
 
 
 class TrackerNode:
     def __init__(self):
-        rospy.init_node('tracker_node', anonymous=True)
+        rospy.init_node('tracker_node', anonymous=False)
         
         # CV bridge for image conversion
         self.bridge = CvBridge()
@@ -76,6 +81,9 @@ class TrackerNode:
         self.log_trajectory = rospy.get_param('~log_trajectory', False)
         self.log_format = rospy.get_param('~log_format', 'csv').lower()
         self.log_file = os.path.expanduser(rospy.get_param('~log_file', '~/tracker_logs/trajectory.csv'))
+        self.logging_active = rospy.get_param('~logging_initially_on', False)
+        self.png_output = os.path.expanduser(rospy.get_param('~png_output', ''))
+        self.png_dpi = rospy.get_param('~png_dpi', 200)
         
         # HSV thresholds and detection fallbacks
         self.red_hsv_ranges = self._load_hsv_ranges(
@@ -111,7 +119,6 @@ class TrackerNode:
         # Frame skipping (process every N-th frame)
         self.frame_skip = rospy.get_param('~frame_skip', 1)  # 1 = process every frame
         self.frame_counter = 0
-        
         # Interpolation when markers are lost
         self.enable_interpolation = rospy.get_param('~enable_interpolation', True)
         self.last_valid_pose = None
@@ -134,6 +141,9 @@ class TrackerNode:
         self.pose_pub = rospy.Publisher(self.pose_topic, PoseStamped, queue_size=10)
         self.path_pub = rospy.Publisher(self.path_topic, Path, queue_size=10)
         self.debug_image_pub = rospy.Publisher(self.debug_image_topic, Image, queue_size=1)
+        self.start_logging_srv = rospy.Service('~start_logging', Trigger, self.handle_start_logging)
+        self.stop_logging_srv = rospy.Service('~stop_logging', Trigger, self.handle_stop_logging)
+        self.save_png_srv = rospy.Service('~save_png', Trigger, self.handle_save_png)
         
         # Path storage
         self.path = Path()
@@ -141,8 +151,7 @@ class TrackerNode:
         self.logged_points = []
         self.smoothed_pose = None
         self.frame_number = 0  # Counter for frame numbers in trajectory
-
-        rospy.on_shutdown(self.save_trajectory)
+        rospy.on_shutdown(self._on_shutdown)
         
         # Validate parameters
         if self.min_marker_distance >= self.max_marker_distance:
@@ -664,7 +673,7 @@ class TrackerNode:
                         if rospy.is_shutdown():
                             return
                     
-                    if self.log_trajectory:
+                    if self.log_trajectory and self.logging_active:
                         # Extract pose data for logging
                         x = pose_msg.pose.position.x
                         y = pose_msg.pose.position.y
@@ -737,8 +746,8 @@ class TrackerNode:
         center_y = (red_world[1] + blue_world[1]) / 2.0
         
         # Yaw = atan2(tail - head) = atan2(blue - red)
-        dx = blue_world[0] - red_world[0]
-        dy = blue_world[1] - red_world[1]
+        dx = red_world[0] - blue_world[0]
+        dy = red_world[1] - blue_world[1]
         yaw = np.arctan2(dy, dx)
 
         # Optional smoothing to reduce jitter
@@ -789,7 +798,7 @@ class TrackerNode:
             if rospy.is_shutdown():
                 return
 
-        if self.log_trajectory:
+        if self.log_trajectory and self.logging_active:
             self.logged_points.append({
                 't': pose_msg.header.stamp.to_sec(),
                 'x': center_x,
@@ -811,38 +820,106 @@ class TrackerNode:
         except CvBridgeError as e:
             rospy.logerr("Failed to publish debug image: %s", str(e))
 
-    def save_trajectory(self):
-        """Persist collected trajectory on shutdown."""
-        if not self.log_trajectory or not self.logged_points:
-            return
+    def _on_shutdown(self):
+        self._save_trajectory(generate_png=bool(self.png_output))
 
-        # Expand user path (~) before getting directory
+    def handle_start_logging(self, _req):
+        if not self.log_trajectory:
+            return TriggerResponse(success=False, message="log_trajectory is disabled")
+        self.logged_points = []
+        self.frame_number = 0
+        self.logging_active = True
+        return TriggerResponse(
+            success=True,
+            message="Logging started; writing to %s (%s)" % (self.log_file, self.log_format)
+        )
+
+    def handle_stop_logging(self, _req):
+        if not self.log_trajectory:
+            return TriggerResponse(success=False, message="log_trajectory is disabled")
+        was_active = self.logging_active
+        self.logging_active = False
+        saved = self._save_trajectory(generate_png=True)
+        msg = "Stopped logging" if was_active else "Logging already stopped"
+        return TriggerResponse(success=saved, message="%s; saved=%s" % (msg, saved))
+
+    def handle_save_png(self, _req):
+        saved = self._render_png(self.log_file if self.log_file else "")
+        return TriggerResponse(success=saved, message="PNG saved" if saved else "PNG not saved (no data)")
+
+    def _save_trajectory(self, generate_png=False):
+        """Persist collected trajectory to disk and optionally render PNG."""
+        if not self.log_trajectory or not self.logged_points:
+            return False
+
         log_file_expanded = os.path.expanduser(self.log_file)
         directory = os.path.dirname(log_file_expanded)
         if directory and not os.path.exists(directory):
             os.makedirs(directory)
 
-        # Use expanded path for file operations
         try:
             if self.log_format == 'json':
                 with open(log_file_expanded, 'w') as f:
                     json.dump(self.logged_points, f, indent=2)
             else:
-                # default: csv
                 with open(log_file_expanded, 'w') as f:
                     writer = csv.writer(f)
                     writer.writerow(['t', 'x', 'y', 'theta', 'frame'])
                     for p in self.logged_points:
                         writer.writerow([
-                            p['t'], 
-                            p['x'], 
-                            p['y'], 
+                            p['t'],
+                            p['x'],
+                            p['y'],
                             p['theta'],
-                            p.get('frame', -1)  # -1 if frame number not available
+                            p.get('frame', -1)
                         ])
             rospy.loginfo("Saved trajectory with %d points to %s", len(self.logged_points), log_file_expanded)
+            if generate_png:
+                self._render_png(log_file_expanded)
+            return True
         except Exception as e:
             rospy.logerr("Failed to save trajectory: %s", str(e))
+            return False
+
+    def _render_png(self, log_file_path):
+        """Render a simple PNG of the trajectory."""
+        if not self.logged_points:
+            return False
+
+        xs = [p['x'] for p in self.logged_points]
+        ys = [p['y'] for p in self.logged_points]
+        if not xs or not ys:
+            return False
+
+        out_path = self.png_output if self.png_output else ""
+        if not out_path:
+            base, _ = os.path.splitext(log_file_path)
+            out_path = base + ".png"
+
+        out_path = os.path.expanduser(out_path)
+        out_dir = os.path.dirname(out_path)
+        if out_dir and not os.path.exists(out_dir):
+            os.makedirs(out_dir)
+
+        try:
+            plt.figure(figsize=(6, 6))
+            plt.plot(xs, ys, 'b-', alpha=0.8, label='trajectory')
+            plt.scatter([xs[0]], [ys[0]], c='g', label='start')
+            plt.scatter([xs[-1]], [ys[-1]], c='r', label='end')
+            plt.axis('equal')
+            plt.grid(True)
+            plt.legend()
+            plt.xlabel('X (m)')
+            plt.ylabel('Y (m)')
+            plt.title('Robot trajectory')
+            plt.tight_layout()
+            plt.savefig(out_path, dpi=self.png_dpi)
+            plt.close()
+            rospy.loginfo("Saved trajectory PNG to %s", out_path)
+            return True
+        except Exception as e:
+            rospy.logerr("Failed to render PNG: %s", str(e))
+            return False
 
 
 def main():

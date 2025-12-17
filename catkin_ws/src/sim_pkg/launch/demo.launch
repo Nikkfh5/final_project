@@ -3,8 +3,20 @@
   <!-- Launch simulation -->
   <include file="$(find sim_pkg)/launch/sim.launch"/>
   
-  <!-- Launch tracker -->
-  <include file="$(find tracker_pkg)/launch/tracker.launch"/>
+  <!-- Launch tracker with overridable logging args -->
+  <arg name="log_trajectory" default="true"/>
+  <arg name="logging_initially_on" default="false"/>
+  <arg name="log_format" default="json"/>
+  <arg name="log_file" default="$(find tracker_pkg)/../../tracker_logs/trajectory.json"/>
+  <arg name="png_output" default="$(find tracker_pkg)/../../tracker_logs/trajectory.png"/>
+
+  <include file="$(find tracker_pkg)/launch/tracker.launch">
+    <arg name="log_trajectory" value="$(arg log_trajectory)"/>
+    <arg name="logging_initially_on" value="$(arg logging_initially_on)"/>
+    <arg name="log_format" value="$(arg log_format)"/>
+    <arg name="log_file" value="$(arg log_file)"/>
+    <arg name="png_output" value="$(arg png_output)"/>
+  </include>
 
   <!-- Simple circular motion via cmd_vel (uses planar_move plugin in model.sdf) -->
   <node name="robot_motion" pkg="sim_pkg" type="cmd_vel_circle.py" output="screen" required="false">

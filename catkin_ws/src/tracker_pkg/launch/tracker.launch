@@ -1,9 +1,23 @@
 <?xml version="1.0"?>
 <launch>
-  <!-- Load configuration parameters -->
-  <rosparam file="$(find tracker_pkg)/config/tracker.yaml" command="load"/>
+  <!-- Arguments to override logging at launch time -->
+  <arg name="log_trajectory" default="true"/>
+  <arg name="logging_initially_on" default="false"/>
+  <arg name="log_format" default="json"/>
+  <arg name="log_file" default="$(find tracker_pkg)/../../tracker_logs/trajectory.json"/>
+  <arg name="png_output" default="$(find tracker_pkg)/../../tracker_logs/trajectory.png"/>
+  <arg name="node_name" default="tracker_node"/>
+
+  <!-- Load configuration parameters under the node namespace -->
+  <rosparam file="$(find tracker_pkg)/config/tracker.yaml" command="load" ns="$(arg node_name)"/>
 
   <!-- Tracker node -->
-  <node name="tracker_node" pkg="tracker_pkg" type="tracker_node.py" output="screen"/>
+  <node name="$(arg node_name)" pkg="tracker_pkg" type="tracker_node.py" output="screen">
+    <param name="log_trajectory" value="$(arg log_trajectory)"/>
+    <param name="logging_initially_on" value="$(arg logging_initially_on)"/>
+    <param name="log_format" value="$(arg log_format)"/>
+    <param name="log_file" value="$(arg log_file)"/>
+    <param name="png_output" value="$(arg png_output)"/>
+  </node>
 </launch>
 
