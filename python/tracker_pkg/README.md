@@ -26,6 +26,37 @@ python -m tracker_pkg.scripts.offline_processor ./data frames.csv \
   --camera-matrix 500,0,320,0,500,240,0,0,1
 ```
 
+## Offline Trajectory Analysis
+
+Для анализа траектории используется отдельный Python-скрипт:
+`python/tracker_pkg/tracker_pkg/plot_trajectory_interactive.py`
+
+### Запуск
+
+Из корня проекта:
+
+`./run_analysis.sh`
+
+
+### Доступные режимы
+
+- Без флагов  
+  Интерактивный matplotlib-график (hover по точкам)
+
+- `--save`  
+  Сохранение PNG:
+  `tracker_logs/trajectory_interactive.png`
+  
+  
+- `--html`  
+Интерактивный HTML-график с подсказками (открывается в браузере)
+
+- `--html-anim`  
+Анимированная HTML-визуализация с ориентацией робота (стрелка),
+фиксированным масштабом и управлением воспроизведением
+
+
+
 ## Тесты и coverage
 
 ```bash
