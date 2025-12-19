@@ -128,5 +128,5 @@
       <xyzOffsets>0 0 0</xyzOffsets>
       <rpyOffsets>0 0 0</rpyOffsets>
     </plugin>
-  </model>
+    </model>
 </sdf>

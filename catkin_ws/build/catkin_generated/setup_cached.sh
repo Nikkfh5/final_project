@@ -7,7 +7,5 @@
 # new environment variables
 
 # modified environment variables
-export CMAKE_PREFIX_PATH="/home/vboxuser/final_project/catkin_ws/devel:$CMAKE_PREFIX_PATH"
 export PWD='/home/vboxuser/final_project/catkin_ws/build'
-export ROSLISP_PACKAGE_DIRECTORIES='/home/vboxuser/final_project/catkin_ws/devel/share/common-lisp'
-export ROS_PACKAGE_PATH="/home/vboxuser/final_project/catkin_ws/src:$ROS_PACKAGE_PATH"
+export PYTHONPATH="/home/vboxuser/final_project/catkin_ws/devel/lib/python3/dist-packages:$PYTHONPATH"

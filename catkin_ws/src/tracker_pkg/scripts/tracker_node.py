@@ -29,19 +29,20 @@ from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 from std_srvs.srv import Trigger, TriggerResponse
 import tf2_ros
+from tracker_pkg.detectors import MarkerDetector, DetectionConfig
 
 
 class TrackerNode:
     def __init__(self):
         rospy.init_node('tracker_node', anonymous=False)
-        
+
         # CV bridge for image conversion
         self.bridge = CvBridge()
-        
+
         # TF buffer and listener
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
-        
+
         # Load parameters
         self.world_frame = rospy.get_param('~world_frame', 'world')
         self.camera_frame = rospy.get_param('~camera_frame', 'camera_link')
@@ -68,11 +69,12 @@ class TrackerNode:
         self.force_fallback_intrinsics = rospy.get_param('~force_fallback_intrinsics', True)
         self.disable_distance_check = rospy.get_param('~disable_distance_check', True)
         self.world_file = rospy.get_param('~world_file', None)
-        self.optical_correction = self._rpy_to_matrix(-math.pi / 2.0, 0.0, -math.pi / 2.0) if self.camera_frame_is_optical else np.eye(3)
+        self.optical_correction = self._rpy_to_matrix(-math.pi / 2.0, 0.0,
+                                                      -math.pi / 2.0) if self.camera_frame_is_optical else np.eye(3)
 
         # Optionally load defaults from an SDF world file (no Gazebo needed)
         self._load_world_camera_defaults()
-        
+
         self.image_topic = rospy.get_param('~image_topic', '/camera/image_raw')
         self.camera_info_topic = rospy.get_param('~camera_info_topic', '/camera/camera_info')
         self.pose_topic = rospy.get_param('~pose_topic', '/robot_pose_external')
@@ -84,7 +86,7 @@ class TrackerNode:
         self.logging_active = rospy.get_param('~logging_initially_on', False)
         self.png_output = os.path.expanduser(rospy.get_param('~png_output', ''))
         self.png_dpi = rospy.get_param('~png_dpi', 200)
-        
+
         # HSV thresholds and detection fallbacks
         self.red_hsv_ranges = self._load_hsv_ranges(
             'red_hsv',
@@ -111,11 +113,11 @@ class TrackerNode:
         self.circle_param2 = rospy.get_param('~circle_param2', 15)
         self.circle_color_margin = rospy.get_param('~circle_color_margin', 5)
         self.circle_blur_kernel = rospy.get_param('~circle_blur_kernel', 7)
-        
+
         self.min_contour_area = rospy.get_param('~min_contour_area', 50)
         self.max_contour_area = rospy.get_param('~max_contour_area', 10000)
         self.morph_kernel_size = rospy.get_param('~morph_kernel_size', 5)
-        
+
         # Frame skipping (process every N-th frame)
         self.frame_skip = rospy.get_param('~frame_skip', 1)  # 1 = process every frame
         self.frame_counter = 0
@@ -124,11 +126,29 @@ class TrackerNode:
         self.last_valid_pose = None
         self.markers_lost_count = 0
         self.max_lost_frames = rospy.get_param('~max_lost_frames', 10)  # Max frames to interpolate
-        
+
         # Camera intrinsics (will be set from camera_info)
         self.camera_matrix = None
         self.dist_coeffs = None
-        
+
+        self.detector = MarkerDetector(
+            DetectionConfig(
+                min_area=self.min_contour_area,
+                max_area=self.max_contour_area,
+                morph_kernel=self.morph_kernel_size,
+                channel_margin=max(self.red_channel_margin, self.blue_channel_margin),
+                channel_min=min(self.red_channel_min, self.blue_channel_min),
+                enable_channel_fallback=self.enable_channel_fallback,
+                enable_circle_fallback=self.enable_circle_fallback,
+                circle_min_radius=self.circle_min_radius,
+                circle_max_radius=self.circle_max_radius,
+                circle_min_distance=self.circle_min_distance,
+                circle_dp=self.circle_dp,
+                circle_param1=self.circle_param1,
+                circle_param2=self.circle_param2,
+            )
+        )
+
         if not self.camera_frame_is_optical:
             rospy.loginfo("camera_frame '%s' is treated as x-forward (Gazebo-style); applying optical correction",
                           self.camera_frame)
@@ -136,7 +156,7 @@ class TrackerNode:
         # Subscribers
         self.image_sub = rospy.Subscriber(self.image_topic, Image, self.image_callback)
         self.camera_info_sub = rospy.Subscriber(self.camera_info_topic, CameraInfo, self.camera_info_callback)
-        
+
         # Publishers
         self.pose_pub = rospy.Publisher(self.pose_topic, PoseStamped, queue_size=10)
         self.path_pub = rospy.Publisher(self.path_topic, Path, queue_size=10)
@@ -144,7 +164,7 @@ class TrackerNode:
         self.start_logging_srv = rospy.Service('~start_logging', Trigger, self.handle_start_logging)
         self.stop_logging_srv = rospy.Service('~stop_logging', Trigger, self.handle_stop_logging)
         self.save_png_srv = rospy.Service('~save_png', Trigger, self.handle_save_png)
-        
+
         # Path storage
         self.path = Path()
         self.path.header.frame_id = self.world_frame
@@ -152,20 +172,20 @@ class TrackerNode:
         self.smoothed_pose = None
         self.frame_number = 0  # Counter for frame numbers in trajectory
         rospy.on_shutdown(self._on_shutdown)
-        
+
         # Validate parameters
         if self.min_marker_distance >= self.max_marker_distance:
             rospy.logerr("min_marker_distance (%.3f) must be < max_marker_distance (%.3f)",
                          self.min_marker_distance, self.max_marker_distance)
             raise ValueError("Invalid marker distance parameters")
-        
+
         if self.frame_skip < 1:
             rospy.logerr("frame_skip must be >= 1, got %d", self.frame_skip)
             raise ValueError("Invalid frame_skip parameter")
-        
+
         if self.pose_smoothing_alpha < 0.0 or self.pose_smoothing_alpha > 1.0:
             rospy.logwarn("pose_smoothing_alpha should be in [0, 1], got %.2f", self.pose_smoothing_alpha)
-        
+
         # Wait for camera_info before starting processing
         rospy.loginfo("Waiting for camera_info...")
         try:
@@ -173,7 +193,7 @@ class TrackerNode:
             rospy.loginfo("Camera info received, tracker node ready")
         except rospy.ROSException:
             rospy.logwarn("Camera info not received within timeout, continuing anyway...")
-        
+
         rospy.loginfo("Tracker node initialized")
 
     def _rpy_to_matrix(self, roll, pitch, yaw):
@@ -278,9 +298,9 @@ class TrackerNode:
             quat = transform.transform.rotation
             qx, qy, qz, qw = quat.x, quat.y, quat.z, quat.w
             rotation_matrix = np.array([
-                [1 - 2*(qy*qy + qz*qz), 2*(qx*qy - qw*qz), 2*(qx*qz + qw*qy)],
-                [2*(qx*qy + qw*qz), 1 - 2*(qx*qx + qz*qz), 2*(qy*qz - qw*qx)],
-                [2*(qx*qz - qw*qy), 2*(qy*qz + qw*qx), 1 - 2*(qx*qx + qy*qy)]
+                [1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy - qw * qz), 2 * (qx * qz + qw * qy)],
+                [2 * (qx * qy + qw * qz), 1 - 2 * (qx * qx + qz * qz), 2 * (qy * qz - qw * qx)],
+                [2 * (qx * qz - qw * qy), 2 * (qy * qz + qw * qx), 1 - 2 * (qx * qx + qy * qy)]
             ])
             translation = np.array([
                 transform.transform.translation.x,
@@ -313,7 +333,7 @@ class TrackerNode:
                       [0.0, 0.0, 1.0]])
         dist = np.zeros(5)
         return K, dist
-        
+
     def camera_info_callback(self, msg):
         """Store camera intrinsics from CameraInfo message."""
         # Camera matrix K (3x3)
@@ -425,11 +445,11 @@ class TrackerNode:
         results = {}
         if circles is None:
             return results
-        
+
         h, w = cv_image.shape[:2]
         best_scores = {'red': (-np.inf, None), 'blue': (-np.inf, None)}
         best_means = {'red': None, 'blue': None}
-        
+
         for circle in np.round(circles[0, :]).astype(int):
             x, y, r = circle
             if x < 0 or y < 0 or x >= w or y >= h:
@@ -459,52 +479,52 @@ class TrackerNode:
                                    np.round(best_means[color], 2) if best_means[color] is not None else None)
 
         return results
-    
+
     def detect_marker(self, cv_image, hsv_ranges, color_name):
         """
         Detect colored marker in image using HSV thresholding.
-        
+
         Args:
             cv_image: OpenCV image (BGR)
             hsv_ranges: List of (lower, upper) HSV arrays
             color_name: 'red' or 'blue', used for fallbacks
-            
+
         Returns:
             ((u, v) centroid, mask) tuple, where centroid is None if not found, 
             but mask is always returned for debugging
         """
         # Convert to HSV
         hsv = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
-        
+
         # Combine all HSV ranges
         mask = None
         for lower, upper in hsv_ranges:
             current = cv2.inRange(hsv, lower, upper)
             mask = current if mask is None else cv2.bitwise_or(mask, current)
-        
+
         mask = self._apply_morphology(mask)
         centroid = self._extract_centroid_from_mask(mask)
-        
+
         if centroid is None:
             fallback_mask = self._channel_fallback_mask(cv_image, color_name)
             if fallback_mask is not None:
                 mask = self._apply_morphology(fallback_mask)
                 centroid = self._extract_centroid_from_mask(mask)
-        
+
         return centroid, mask
-    
+
     def pixel_to_world_point(self, u, v):
         """
         Convert pixel coordinates to world 3D point by ray-plane intersection.
-        
+
         Algorithm:
         1. Build ray in camera frame using intrinsics (unproject pixel)
         2. Transform ray to world frame using TF
         3. Intersect ray with ground plane z = ground_z
-        
+
         Args:
             u, v: Pixel coordinates
-            
+
         Returns:
             (x, y, z) in world frame, or None if transform fails
         """
@@ -512,9 +532,9 @@ class TrackerNode:
         dist_coeffs = self.dist_coeffs
 
         use_fallback_intrinsics = (
-            self.force_fallback_intrinsics
-            or camera_matrix is None
-            or camera_matrix.shape != (3, 3)
+                self.force_fallback_intrinsics
+                or camera_matrix is None
+                or camera_matrix.shape != (3, 3)
         )
         if use_fallback_intrinsics:
             camera_matrix, dist_coeffs = self._build_fallback_camera_matrix()
@@ -522,22 +542,22 @@ class TrackerNode:
         else:
             if dist_coeffs is None or len(dist_coeffs) == 0:
                 dist_coeffs = np.zeros(5)
-        
+
         rospy.logdebug_once("Camera matrix: %s", camera_matrix)
-        
+
         # Get camera to world transform (TF or fallback)
         translation, rotation_matrix = self._get_transform_world_to_camera()
         if translation is None or rotation_matrix is None:
             rospy.logwarn_throttle(1.0, "Camera transform is unavailable, skipping frame")
             return None
-        
+
         # Unproject pixel to ray in camera frame
         # Ray direction in camera frame (normalized)
         fx = camera_matrix[0, 0]
         fy = camera_matrix[1, 1]
         cx = camera_matrix[0, 2]
         cy = camera_matrix[1, 2]
-        
+
         # Undistort pixel coordinates if distortion coefficients are available
         if dist_coeffs is not None and len(dist_coeffs) > 0:
             # Undistort the point
@@ -546,15 +566,15 @@ class TrackerNode:
             u_undist, v_undist = undistorted[0, 0]
         else:
             u_undist, v_undist = u, v
-        
+
         # Normalized image coordinates
         x_norm = (u_undist - cx) / fx
         y_norm = -(v_undist - cy) / fy
-        
+
         # Ray direction in camera optical frame (z = 1 for normalized coordinates)
         ray_dir_camera = np.array([x_norm, y_norm, 1.0])
         ray_dir_camera = ray_dir_camera / np.linalg.norm(ray_dir_camera)
-        
+
         # Transform ray direction to world frame
         ray_dir_world = rotation_matrix.dot(ray_dir_camera)
 
@@ -563,22 +583,22 @@ class TrackerNode:
             ray_dir_world *= -1
             rospy.logwarn_once("Ray direction flipped downward because it was pointing up (using fallback pose)")
             rospy.loginfo_once("Ray direction flipped downward because it was pointing up (using fallback pose)")
-        
+
         # Camera position in world frame
         cam_pos_world = translation
 
         # Log once to verify ray points downward
         rospy.loginfo_once("Ray dir world: %s, cam pos world: %s", ray_dir_world, cam_pos_world)
-        
+
         # Intersect ray with ground plane z = ground_z
         # Ray: P = cam_pos_world + t * ray_dir_world
         # Plane: z = ground_z
         # Solve: cam_pos_world.z + t * ray_dir_world.z = ground_z
         if abs(ray_dir_world[2]) < 1e-6:
             return None  # Ray parallel to ground
-        
+
         t = (self.ground_z - cam_pos_world[2]) / ray_dir_world[2]
-        
+
         if t < 0:
             ray_dir_world *= -1
             if abs(ray_dir_world[2]) < 1e-6:
@@ -586,11 +606,11 @@ class TrackerNode:
             t = (self.ground_z - cam_pos_world[2]) / ray_dir_world[2]
             if t < 0:
                 return None  # Ray still pointing away from ground
-        
+
         point_world = cam_pos_world + t * ray_dir_world
-        
+
         return (point_world[0], point_world[1], point_world[2])
-    
+
     def image_callback(self, msg):
         """Process incoming image and publish robot pose."""
         if rospy.is_shutdown():
@@ -600,56 +620,72 @@ class TrackerNode:
         if self.frame_counter < self.frame_skip:
             return
         self.frame_counter = 0
-        
+
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         except CvBridgeError as e:
             rospy.logerr("CvBridge error: %s", str(e))
             return
-        
+
         # Проверка, что изображение не пустое
         if cv_image is None or cv_image.size == 0:
             rospy.logwarn_throttle(2.0, "Received empty image")
             return
-        
-        # Detect markers
-        red_center, _ = self.detect_marker(cv_image, self.red_hsv_ranges, 'red')
-        blue_center, _ = self.detect_marker(cv_image, self.blue_hsv_ranges, 'blue')
 
-        if (red_center is None or blue_center is None) and self.enable_circle_fallback:
-            circle_candidates = self._detect_markers_via_circles(cv_image)
-            if red_center is None and 'red' in circle_candidates:
-                red_center = circle_candidates['red']
-            if blue_center is None and 'blue' in circle_candidates:
-                blue_center = circle_candidates['blue']
-        
         # Debug image - показываем исходное изображение
         debug_image = cv_image.copy()
-        
+
+        detections = self.detector.detect(cv_image)
+        red_candidates = detections.get("red", [])
+        blue_candidates = detections.get("blue", [])
+
+        for r in red_candidates:
+            cv2.circle(
+                debug_image,
+                (r["x"], r["y"]),
+                int(max(3, r["radius"])),
+                (0, 0, 150),
+                1,
+            )
+
+        for b in blue_candidates:
+            cv2.circle(
+                debug_image,
+                (b["x"], b["y"]),
+                int(max(3, b["radius"])),
+                (150, 0, 0),
+                1,
+            )
+
+        red_det, blue_det = self._select_best_pair(red_candidates, blue_candidates)
+
+        red_center = (red_det["x"], red_det["y"]) if red_det else None
+        blue_center = (blue_det["x"], blue_det["y"]) if blue_det else None
+
         # Добавляем отладочный текст
         status_text = f"Red: {'FOUND' if red_center else 'NOT FOUND'}, Blue: {'FOUND' if blue_center else 'NOT FOUND'}"
-        cv2.putText(debug_image, status_text, (10, 30), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        
+        cv2.putText(debug_image, status_text, (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
         # Рисуем найденные центры меток
         if red_center is not None:
             cv2.circle(debug_image, red_center, 15, (0, 0, 255), 3)  # Красный круг
-            cv2.putText(debug_image, "RED", (red_center[0] + 20, red_center[1]), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        
+            cv2.putText(debug_image, "RED", (red_center[0] + 20, red_center[1]),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
         if blue_center is not None:
             cv2.circle(debug_image, blue_center, 15, (255, 0, 0), 3)  # Синий круг
-            cv2.putText(debug_image, "BLUE", (blue_center[0] + 20, blue_center[1]), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-        
+            cv2.putText(debug_image, "BLUE", (blue_center[0] + 20, blue_center[1]),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+
         # Если обе метки найдены, рисуем линию между ними
         if red_center is not None and blue_center is not None:
             cv2.line(debug_image, red_center, blue_center, (0, 255, 0), 3)
-        
+
         if red_center is None or blue_center is None:
-            rospy.logwarn_throttle(2.0, "Markers not detected (red: %s, blue: %s)", 
-                                  red_center, blue_center)
-            
+            rospy.logwarn_throttle(2.0, "Markers not detected (red: %s, blue: %s)",
+                                   red_center, blue_center)
+
             # Try interpolation if enabled and we have a last valid pose
             if self.enable_interpolation and self.last_valid_pose is not None:
                 if self.markers_lost_count < self.max_lost_frames:
@@ -659,7 +695,7 @@ class TrackerNode:
                     pose_msg.header.stamp = msg.header.stamp if msg.header.stamp else rospy.Time.now()
                     pose_msg.header.frame_id = self.world_frame
                     pose_msg.pose = self.last_valid_pose
-                    
+
                     try:
                         self.pose_pub.publish(pose_msg)
                     except rospy.ROSException:
@@ -672,14 +708,14 @@ class TrackerNode:
                     except rospy.ROSException:
                         if rospy.is_shutdown():
                             return
-                    
+
                     if self.log_trajectory and self.logging_active:
                         # Extract pose data for logging
                         x = pose_msg.pose.position.x
                         y = pose_msg.pose.position.y
                         # Convert quaternion to yaw
                         q = pose_msg.pose.orientation
-                        yaw = np.arctan2(2*(q.w*q.z + q.x*q.y), 1 - 2*(q.y*q.y + q.z*q.z))
+                        yaw = np.arctan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
                         self.logged_points.append({
                             't': pose_msg.header.stamp.to_sec(),
                             'x': x,
@@ -691,7 +727,7 @@ class TrackerNode:
                     rospy.logdebug("Using interpolated pose (lost frames: %d)", self.markers_lost_count)
                 else:
                     rospy.logwarn_throttle(2.0, "Markers lost for too long, stopping interpolation")
-            
+
             # Publish debug image anyway (даже если метки не найдены)
             try:
                 debug_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
@@ -704,22 +740,22 @@ class TrackerNode:
             except CvBridgeError as e:
                 rospy.logerr("Failed to publish debug image: %s", str(e))
             return
-        
+
         # Markers detected - reset lost counter
         self.markers_lost_count = 0
-        
+
         # Draw detected centers
         cv2.circle(debug_image, red_center, 5, (0, 0, 255), -1)
         cv2.circle(debug_image, blue_center, 5, (255, 0, 0), -1)
         cv2.line(debug_image, red_center, blue_center, (0, 255, 0), 2)
-        
+
         # Convert to world coordinates
         red_world = self.pixel_to_world_point(red_center[0], red_center[1])
         blue_world = self.pixel_to_world_point(blue_center[0], blue_center[1])
-        
+
         if red_world is None or blue_world is None:
-            rospy.logwarn_throttle(1.0, "Failed to convert pixel to world coordinates (red: %s, blue: %s)", 
-                                  red_world, blue_world)
+            rospy.logwarn_throttle(1.0, "Failed to convert pixel to world coordinates (red: %s, blue: %s)",
+                                   red_world, blue_world)
             # Публикуем debug изображение даже если конвертация не удалась
             try:
                 debug_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
@@ -739,12 +775,12 @@ class TrackerNode:
             rospy.logwarn_throttle(1.0, "Marker distance out of range: %.3f m (expected %.3f..%.3f)",
                                    dist, self.min_marker_distance, self.max_marker_distance)
             return
-        
+
         # Compute robot pose
         # Center = midpoint between markers
         center_x = (red_world[0] + blue_world[0]) / 2.0
         center_y = (red_world[1] + blue_world[1]) / 2.0
-        
+
         # Yaw = atan2(tail - head) = atan2(blue - red)
         dx = red_world[0] - blue_world[0]
         dy = red_world[1] - blue_world[1]
@@ -762,7 +798,7 @@ class TrackerNode:
                 dyaw = np.arctan2(np.sin(yaw - prev_yaw), np.cos(yaw - prev_yaw))
                 yaw = prev_yaw + alpha * dyaw
                 self.smoothed_pose = (center_x, center_y, yaw)
-        
+
         # Publish pose
         pose_msg = PoseStamped()
         pose_msg.header.stamp = msg.header.stamp if msg.header.stamp else rospy.Time.now()
@@ -770,7 +806,7 @@ class TrackerNode:
         pose_msg.pose.position.x = center_x
         pose_msg.pose.position.y = center_y
         pose_msg.pose.position.z = 0.0
-        
+
         # Convert yaw to quaternion (rotation around z-axis)
         cy = np.cos(yaw * 0.5)
         sy = np.sin(yaw * 0.5)
@@ -778,17 +814,17 @@ class TrackerNode:
         pose_msg.pose.orientation.y = 0.0
         pose_msg.pose.orientation.z = sy
         pose_msg.pose.orientation.w = cy
-        
+
         # Store as last valid pose for interpolation
         if self.enable_interpolation:
             self.last_valid_pose = pose_msg.pose
-        
+
         try:
             self.pose_pub.publish(pose_msg)
         except rospy.ROSException:
             if rospy.is_shutdown():
                 return
-        
+
         # Update path
         self.path.header.stamp = rospy.Time.now()
         self.path.poses.append(pose_msg)
@@ -807,7 +843,7 @@ class TrackerNode:
                 'frame': self.frame_number
             })
             self.frame_number += 1
-        
+
         # Publish debug image
         try:
             debug_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
@@ -921,6 +957,51 @@ class TrackerNode:
             rospy.logerr("Failed to render PNG: %s", str(e))
             return False
 
+    def _select_best_pair(self, reds, blues):
+        """
+        Select the best red-blue marker pair.
+
+        Each candidate is a dict:
+          {x, y, area, radius}
+
+        Returns:
+          (red_candidate, blue_candidate) or (None, None)
+        """
+        if not reds or not blues:
+            return None, None
+
+        best_score = -float("inf")
+        best_pair = (None, None)
+
+        for r in reds:
+            for b in blues:
+                dx = r["x"] - b["x"]
+                dy = r["y"] - b["y"]
+                dist = math.hypot(dx, dy)
+
+                # Distance gating (pixel space!)
+                if not self.disable_distance_check:
+                    if dist < 15 or dist > 300:
+                        continue
+
+                # Size similarity
+                if r["radius"] > 0 and b["radius"] > 0:
+                    radius_ratio = min(r["radius"], b["radius"]) / max(r["radius"], b["radius"])
+                else:
+                    radius_ratio = 0.0
+
+                # Score
+                score = (
+                        -dist  # closer is better
+                        + 50.0 * radius_ratio  # similar size is better
+                )
+
+                if score > best_score:
+                    best_score = score
+                    best_pair = (r, b)
+
+        return best_pair
+
 
 def main():
     try:
@@ -932,3 +1013,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

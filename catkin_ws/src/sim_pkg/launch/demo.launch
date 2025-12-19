@@ -1,7 +1,10 @@
 <?xml version="1.0"?>
 <launch>
-  <!-- Shared args for switching between stock and custom worlds -->
-  <arg name="world_file" default="$(find sim_pkg)/worlds/arena.world"/>
+  <!-- User-facing args -->
+  <arg name="scenario" default="empty"/>
+  <arg name="trajectory" default="circle"/>
+
+  <!-- Common sim args -->
   <arg name="spawn_robot" default="true"/>
   <arg name="robot_model" default="$(find sim_pkg)/models/robot_with_markers/model.sdf"/>
   <arg name="robot_name" default="robot_with_markers"/>
@@ -11,51 +14,106 @@
   <arg name="publish_static_camera_tf" default="true"/>
   <arg name="gui" default="true"/>
 
-  <!-- Launch simulation -->
-  <include file="$(find sim_pkg)/launch/sim.launch">
-    <arg name="world_file" value="$(arg world_file)"/>
-    <arg name="spawn_robot" value="$(arg spawn_robot)"/>
-    <arg name="robot_model" value="$(arg robot_model)"/>
-    <arg name="robot_name" value="$(arg robot_name)"/>
-    <arg name="robot_x" value="$(arg robot_x)"/>
-    <arg name="robot_y" value="$(arg robot_y)"/>
-    <arg name="robot_z" value="$(arg robot_z)"/>
-    <arg name="publish_static_camera_tf" value="$(arg publish_static_camera_tf)"/>
-    <arg name="gui" value="$(arg gui)"/>
-  </include>
-
-  <!-- Launch tracker with overridable logging/world args -->
+  <!-- Tracker/logging args -->
   <arg name="log_trajectory" default="true"/>
   <arg name="logging_initially_on" default="false"/>
   <arg name="log_format" default="json"/>
   <arg name="log_file" default="$(find tracker_pkg)/../../tracker_logs/trajectory.json"/>
   <arg name="png_output" default="$(find tracker_pkg)/../../tracker_logs/trajectory.png"/>
 
-  <include file="$(find tracker_pkg)/launch/tracker.launch">
-    <arg name="world_file" value="$(arg world_file)"/>
-    <arg name="log_trajectory" value="$(arg log_trajectory)"/>
-    <arg name="logging_initially_on" value="$(arg logging_initially_on)"/>
-    <arg name="log_format" value="$(arg log_format)"/>
-    <arg name="log_file" value="$(arg log_file)"/>
-    <arg name="png_output" value="$(arg png_output)"/>
-  </include>
+  <!-- ========================================================= -->
+  <!-- Scenario: empty -->
+  <!-- ========================================================= -->
+  <group if="$(eval arg('scenario') == 'empty')">
+    <include file="$(find sim_pkg)/launch/sim.launch">
+      <arg name="world_file" value="$(find sim_pkg)/worlds/arena_empty.world"/>
+      <arg name="spawn_robot" value="$(arg spawn_robot)"/>
+      <arg name="robot_model" value="$(arg robot_model)"/>
+      <arg name="robot_name" value="$(arg robot_name)"/>
+      <arg name="robot_x" value="$(arg robot_x)"/>
+      <arg name="robot_y" value="$(arg robot_y)"/>
+      <arg name="robot_z" value="$(arg robot_z)"/>
+      <arg name="publish_static_camera_tf" value="$(arg publish_static_camera_tf)"/>
+      <arg name="gui" value="$(arg gui)"/>
+    </include>
 
-  <!-- Simple circular motion via cmd_vel (uses planar_move plugin in model.sdf) -->
-  <node name="robot_motion" pkg="sim_pkg" type="cmd_vel_circle.py" output="screen" required="false" if="$(arg spawn_robot)">
+    <include file="$(find tracker_pkg)/launch/tracker.launch">
+      <arg name="world_file" value="$(find sim_pkg)/worlds/arena_empty.world"/>
+      <arg name="log_trajectory" value="$(arg log_trajectory)"/>
+      <arg name="logging_initially_on" value="$(arg logging_initially_on)"/>
+      <arg name="log_format" value="$(arg log_format)"/>
+      <arg name="log_file" value="$(arg log_file)"/>
+      <arg name="png_output" value="$(arg png_output)"/>
+    </include>
+  </group>
+
+  <!-- ========================================================= -->
+  <!-- Scenario: obstacles -->
+  <!-- ========================================================= -->
+  <group if="$(eval arg('scenario') == 'obstacles')">
+    <include file="$(find sim_pkg)/launch/sim.launch">
+      <arg name="world_file" value="$(find sim_pkg)/worlds/arena_obstacles.world"/>
+      <arg name="spawn_robot" value="$(arg spawn_robot)"/>
+      <arg name="robot_model" value="$(arg robot_model)"/>
+      <arg name="robot_name" value="$(arg robot_name)"/>
+      <arg name="robot_x" value="$(arg robot_x)"/>
+      <arg name="robot_y" value="$(arg robot_y)"/>
+      <arg name="robot_z" value="$(arg robot_z)"/>
+      <arg name="publish_static_camera_tf" value="$(arg publish_static_camera_tf)"/>
+      <arg name="gui" value="$(arg gui)"/>
+    </include>
+
+    <include file="$(find tracker_pkg)/launch/tracker.launch">
+      <arg name="world_file" value="$(find sim_pkg)/worlds/arena_obstacles.world"/>
+      <arg name="log_trajectory" value="$(arg log_trajectory)"/>
+      <arg name="logging_initially_on" value="$(arg logging_initially_on)"/>
+      <arg name="log_format" value="$(arg log_format)"/>
+      <arg name="log_file" value="$(arg log_file)"/>
+      <arg name="png_output" value="$(arg png_output)"/>
+    </include>
+  </group>
+
+  <!-- ========================================================= -->
+  <!-- Scenario: corridor -->
+  <!-- ========================================================= -->
+  <group if="$(eval arg('scenario') == 'corridor')">
+    <include file="$(find sim_pkg)/launch/sim.launch">
+      <arg name="world_file" value="$(find sim_pkg)/worlds/corridor.world"/>
+      <arg name="spawn_robot" value="$(arg spawn_robot)"/>
+      <arg name="robot_model" value="$(arg robot_model)"/>
+      <arg name="robot_name" value="$(arg robot_name)"/>
+      <arg name="robot_x" value="$(arg robot_x)"/>
+      <arg name="robot_y" value="$(arg robot_y)"/>
+      <arg name="robot_z" value="$(arg robot_z)"/>
+      <arg name="publish_static_camera_tf" value="$(arg publish_static_camera_tf)"/>
+      <arg name="gui" value="$(arg gui)"/>
+    </include>
+
+    <include file="$(find tracker_pkg)/launch/tracker.launch">
+      <arg name="world_file" value="$(find sim_pkg)/worlds/corridor.world"/>
+      <arg name="log_trajectory" value="$(arg log_trajectory)"/>
+      <arg name="logging_initially_on" value="$(arg logging_initially_on)"/>
+      <arg name="log_format" value="$(arg log_format)"/>
+      <arg name="log_file" value="$(arg log_file)"/>
+      <arg name="png_output" value="$(arg png_output)"/>
+    </include>
+  </group>
+
+  <!-- Robot motion node -->
+  <node name="robot_motion"
+        pkg="sim_pkg"
+        type="move_robot.py"
+        output="screen"
+        required="false"
+        if="$(arg spawn_robot)">
     <param name="radius" value="0.6"/>
     <param name="angular_speed" value="0.35"/>
+    <param name="trajectory" value="$(arg trajectory)"/>
   </node>
-  
-  <!-- Launch RViz with config -->
-  <node name="rviz" pkg="rviz" type="rviz" 
-        args="-d $(find tracker_pkg)/rviz/tracker.rviz" 
+
+  <!-- RViz -->
+  <node name="rviz" pkg="rviz" type="rviz"
+        args="-d $(find tracker_pkg)/rviz/tracker.rviz"
         output="screen" required="false"/>
-  
-  <!-- Expected topics after launch:
-       /camera/image_raw
-       /camera/camera_info
-       /robot_pose_external
-       /robot_path_external
-       /debug/image
-  -->
 </launch>
+
