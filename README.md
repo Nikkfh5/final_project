@@ -6,7 +6,7 @@
 
 ## Онлайн: Gazebo + RViz
 ```bash
-cd ~/Documents/final_project/catkin_ws
+cd /final_project/catkin_ws
 catkin_make
 source devel/setup.bash
 roslaunch sim_pkg demo.launch use_rviz:=true logging_initially_on:=true log_format:=json \
@@ -22,7 +22,7 @@ roslaunch sim_pkg demo.launch use_rviz:=true logging_initially_on:=true log_form
 1) Запусти симуляцию (см. выше).
 2) Во втором терминале:
 ```bash
-cd ~/Documents/final_project/catkin_ws
+cd /final_project/catkin_ws
 source devel/setup.bash
 rosrun image_view image_saver image:=/camera/image_raw _save_all_image:=true \
   _filename_format:=$PWD/samples/frame_%04d.png
@@ -31,12 +31,12 @@ rosrun image_view image_saver image:=/camera/image_raw _save_all_image:=true \
 
 ## Оффлайн через Docker (обработка кадров и отрисовка)
 ```bash
-cd ~/Documents/final_project
+cd /final_project
 docker build -f python/Dockerfile -t offline-tracker .
 ```
 Обработка с реальными параметрами сим-камеры (матрица из `samples/frame_0002.ini`, камера на z=3, смотрит вниз):
 ```bash
-cd ~/Documents/final_project/catkin_ws
+cd /final_project/catkin_ws
 # 1) offline_processor: читает кадры из /data, строит траекторию и сохраняет /data/trajectory.json
 docker run --rm -v "$PWD/samples:/data" offline-tracker \
   python -m tracker_pkg.scripts.offline_processor /data /data/trajectory.json --format json \
@@ -55,7 +55,7 @@ docker run --rm -v "$PWD/samples:/data" offline-tracker \
 ## Аналитика / отчёты
 Работает по умолчанию с онлайн-логом `tracker_logs/trajectory.json`:
 ```bash
-cd ~/Documents/final_project
+cd /final_project
 ./run_analysis.sh --report      # HTML-дашборд + PNG/HTML артефакты
 ./run_analysis.sh --all         # то же самое, явно включает все графики и анимацию
 ```
@@ -63,10 +63,14 @@ cd ~/Documents/final_project
 
 ## Тесты и разработка
 ```bash
-cd ~/Documents/final_project
+cd /final_project
+
+python3 -m pip install --upgrade pip setuptools wheel
 python3 -m pip install -r requirements.txt   # пакет + визуализация + dev
 python3 -m pytest --cov=tracker_pkg --cov-report=term-missing python/tests
 ```
+
+Если `pip install -r requirements.txt` жалуется на `editable mode requires setup.py`, обновите pip/setuptools как выше или поставьте без editable: `python3 -m pip install ./python[viz,dev]`.
 
 ## Архитектура
 - `catkin_ws/src/sim_pkg` — Gazebo миры и launch для камеры; статический TF world->camera.  
