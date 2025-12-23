@@ -20,8 +20,9 @@
   <arg name="log_trajectory" default="true"/>
   <arg name="logging_initially_on" default="false"/>
   <arg name="log_format" default="json"/>
-  <arg name="log_file" default="$(env HOME)/final_project/tracker_logs/trajectory.json"/>
-  <arg name="png_output" default="$(env HOME)/final_project/tracker_logs/trajectory.png"/>
+  <!-- Save logs relative to repo root -->
+  <arg name="log_file" default="$(find sim_pkg)/../../../tracker_logs/trajectory.json"/>
+  <arg name="png_output" default="$(find sim_pkg)/../../../tracker_logs/trajectory.png"/>
 
   <!-- ========================================================= -->
   <!-- Scenario: empty -->

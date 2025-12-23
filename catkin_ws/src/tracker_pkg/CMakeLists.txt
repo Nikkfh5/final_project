@@ -13,15 +13,23 @@ find_package(catkin REQUIRED COMPONENTS
 
 catkin_python_setup()
 
+
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/catkin_generated/installspace)
+
 catkin_package(
   CATKIN_DEPENDS rospy std_msgs sensor_msgs geometry_msgs nav_msgs tf2_ros cv_bridge
 )
 
+
 catkin_install_python(PROGRAMS
   scripts/tracker_node.py
-  scripts/offline_visualizer.py
   scripts/process_image_sequence.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+install(PROGRAMS
+  scripts/offline_visualizer.py
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/scripts
 )
 
 # Install launch files
