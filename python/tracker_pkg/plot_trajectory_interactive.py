@@ -52,6 +52,8 @@ TRAJECTORY_JSON = os.path.join(LOG_DIR, "trajectory.json")
 OUTPUT_PNG = os.path.join(LOG_DIR, "trajectory_interactive.png")
 REPORT_HTML = os.path.join(LOG_DIR, "report.html")
 
+os.makedirs(LOG_DIR, exist_ok=True)
+
 
 HTML_INTERACTIVE = os.path.join(LOG_DIR, "trajectory_interactive.html")
 HTML_ANIMATED = os.path.join(LOG_DIR, "trajectory_animated.html")
@@ -113,6 +115,16 @@ args = parser.parse_args()
 
 if args.report and not args.all:
     args.all = True
+
+if args.all:
+    args.save = True
+    args.heatmap = True
+    args.time_color = True
+    args.speed_color = True
+    args.html = True
+    args.html_anim = True
+    args.report = True
+
 
 # === Load data ===
 if not os.path.exists(TRAJECTORY_JSON):
@@ -193,6 +205,7 @@ if args.html:
 
     html_path = os.path.join(LOG_DIR, "trajectory_interactive.html")
     fig_html.write_html(html_path)
+    print(f"[INFO] Interactive HTML saved to {html_path}")
     if not args.report and not args.all:
         webbrowser.open(f"file://{html_path}")
 
@@ -335,6 +348,7 @@ if args.html_anim:
 
     html_path = os.path.join(LOG_DIR, "trajectory_animated.html")
     fig_html.write_html(html_path)
+    print(f"[INFO] Animated HTML saved to {html_path}")
     if not args.report and not args.all:
         webbrowser.open(f"file://{html_path}")
 
@@ -373,7 +387,8 @@ if args.heatmap:
     output_hm = os.path.join(LOG_DIR, "trajectory_heatmap.png")
     fig_hm.savefig(output_hm, dpi=200, bbox_inches="tight")
     print(f"[INFO] Heatmap saved to {output_hm}")
-    plt.show()
+    if not args.report and not args.all:
+        plt.show()
     
 if args.time_color:
     fig_tc, ax_tc = plt.subplots()
@@ -414,7 +429,8 @@ if args.time_color:
     output_tc = os.path.join(LOG_DIR, "trajectory_time_colored.png")
     fig_tc.savefig(output_tc, dpi=200, bbox_inches="tight")
     print(f"[INFO] Time-colored trajectory saved to {output_tc}")
-    plt.show()
+    if not args.report and not args.all:
+        plt.show()
     
 if args.speed_color:
     fig_sc, ax_sc = plt.subplots()
@@ -452,20 +468,8 @@ if args.speed_color:
     output_sc = os.path.join(LOG_DIR, "trajectory_speed_colored.png")
     fig_sc.savefig(output_sc, dpi=200, bbox_inches="tight")
     print(f"[INFO] Speed-colored trajectory saved to {output_sc}")
-    plt.show()
-
-
-# === Expand --all flag ===
-if args.all:
-    args.save = True
-    args.heatmap = True
-    args.time_color = True
-    args.speed_color = True
-    args.html = True
-    args.html_anim = True
-    args.report = True
-
-
+    if not args.report and not args.all:
+        plt.show()
 
 
 # --- график ---
@@ -667,5 +671,3 @@ if args.report:
 
 if args.report and not getattr(args, "no_open", False):
     webbrowser.open(f"file://{REPORT_HTML}")
-
-

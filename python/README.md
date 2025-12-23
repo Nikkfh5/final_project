@@ -29,7 +29,7 @@ python -m tracker_pkg.scripts.offline_processor ./data frames.csv \
 ## Offline Trajectory Analysis
 
 Для анализа траектории используется отдельный Python-скрипт:
-`python/tracker_pkg/tracker_pkg/plot_trajectory_interactive.py`
+`python/tracker_pkg/plot_trajectory_interactive.py`
 
 ### Запуск
 
