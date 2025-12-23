@@ -50,6 +50,17 @@ PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "..", ".."))
 LOG_DIR = os.path.join(PROJECT_ROOT, "tracker_logs")
 TRAJECTORY_JSON = os.path.join(LOG_DIR, "trajectory.json")
 OUTPUT_PNG = os.path.join(LOG_DIR, "trajectory_interactive.png")
+REPORT_HTML = os.path.join(LOG_DIR, "report.html")
+
+
+HTML_INTERACTIVE = os.path.join(LOG_DIR, "trajectory_interactive.html")
+HTML_ANIMATED = os.path.join(LOG_DIR, "trajectory_animated.html")
+PNG_MAIN = os.path.join(LOG_DIR, "trajectory_interactive.png")
+PNG_HEATMAP = os.path.join(LOG_DIR, "trajectory_heatmap.png")
+PNG_TIME = os.path.join(LOG_DIR, "trajectory_time_colored.png")
+PNG_SPEED = os.path.join(LOG_DIR, "trajectory_speed_colored.png")
+
+
 
 
 parser = argparse.ArgumentParser(description="Interactive trajectory viewer")
@@ -83,10 +94,25 @@ parser.add_argument(
     action="store_true",
     help="Show trajectory colored by linear speed",
 )
+parser.add_argument(
+    "--all",
+    action="store_true",
+    help="Generate everything: PNGs + HTMLs + report",
+)
+
+parser.add_argument(
+    "--report",
+    action="store_true",
+    help="Generate a single HTML report (dashboard) combining all outputs",
+)
+
 
 
 args = parser.parse_args()
 
+
+if args.report and not args.all:
+    args.all = True
 
 # === Load data ===
 if not os.path.exists(TRAJECTORY_JSON):
@@ -167,7 +193,9 @@ if args.html:
 
     html_path = os.path.join(LOG_DIR, "trajectory_interactive.html")
     fig_html.write_html(html_path)
-    webbrowser.open(f"file://{html_path}")
+    if not args.report and not args.all:
+        webbrowser.open(f"file://{html_path}")
+
 
 if args.html_anim:
     frames = []
@@ -307,7 +335,9 @@ if args.html_anim:
 
     html_path = os.path.join(LOG_DIR, "trajectory_animated.html")
     fig_html.write_html(html_path)
-    webbrowser.open(f"file://{html_path}")
+    if not args.report and not args.all:
+        webbrowser.open(f"file://{html_path}")
+
 if args.heatmap:
     fig_hm, ax_hm = plt.subplots()
 
@@ -425,6 +455,15 @@ if args.speed_color:
     plt.show()
 
 
+# === Expand --all flag ===
+if args.all:
+    args.save = True
+    args.heatmap = True
+    args.time_color = True
+    args.speed_color = True
+    args.html = True
+    args.html_anim = True
+    args.report = True
 
 
 
@@ -460,6 +499,154 @@ def on_add(sel):
         )
     )
     sel.annotation.get_bbox_patch().set(alpha=0.9)
+    
+    
+def build_report_html(data, output_path):
+    # basic stats
+    xs = [p["x"] for p in data]
+    ys = [p["y"] for p in data]
+    ts = [p["t"] for p in data]
+    thetas = [p.get("theta", 0.0) for p in data]
+
+    n = len(xs)
+    t0, t1 = (min(ts), max(ts)) if ts else (0.0, 0.0)
+    duration = (t1 - t0) if ts else 0.0
+
+    # speed estimate
+    speeds_local = []
+    for i in range(n - 1):
+        dt = ts[i + 1] - ts[i]
+        if dt > 1e-6:
+            speeds_local.append(math.hypot(xs[i+1] - xs[i], ys[i+1] - ys[i]) / dt)
+    v_avg = float(np.mean(speeds_local)) if speeds_local else 0.0
+    v_max = float(np.max(speeds_local)) if speeds_local else 0.0
+
+    # relative links (report in same folder)
+    def rel(p): 
+        return os.path.basename(p)
+
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Robot Trajectory Report</title>
+  <style>
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      margin: 24px;
+      color: #111;
+    }}
+    h1 {{ margin: 0 0 8px; }}
+    .meta {{ color: #444; margin-bottom: 20px; }}
+    .grid {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      align-items: start;
+    }}
+    .card {{
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 14px;
+      background: #fff;
+    }}
+    .card h2 {{
+      font-size: 16px;
+      margin: 0 0 10px;
+    }}
+    iframe {{
+      width: 100%;
+      height: 520px;
+      border: 0;
+      border-radius: 8px;
+      background: #fafafa;
+    }}
+    img {{
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #eee;
+    }}
+    .wide {{
+      grid-column: 1 / -1;
+    }}
+    .small {{
+      font-size: 13px;
+      color: #555;
+      line-height: 1.45;
+    }}
+    code {{
+      background: #f6f6f6;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }}
+  </style>
+</head>
+<body>
+  <h1>Robot Trajectory Report</h1>
+  <div class="meta">
+    Points: <b>{n}</b> &nbsp;|&nbsp;
+    Duration: <b>{duration:.2f}s</b> &nbsp;|&nbsp;
+    Avg speed: <b>{v_avg:.3f} m/s</b> &nbsp;|&nbsp;
+    Max speed: <b>{v_max:.3f} m/s</b>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Interactive trajectory (hover)</h2>
+      <iframe src="{rel(HTML_INTERACTIVE)}"></iframe>
+      <div class="small">Source: <code>{rel(HTML_INTERACTIVE)}</code></div>
+    </div>
+
+    <div class="card">
+      <h2>Animated pose (orientation)</h2>
+      <iframe src="{rel(HTML_ANIMATED)}"></iframe>
+      <div class="small">Source: <code>{rel(HTML_ANIMATED)}</code></div>
+    </div>
+
+    <div class="card">
+      <h2>Heatmap (visit density)</h2>
+      <img src="{rel(PNG_HEATMAP)}" alt="heatmap"/>
+      <div class="small">Source: <code>{rel(PNG_HEATMAP)}</code></div>
+    </div>
+
+    <div class="card">
+      <h2>Colored by time</h2>
+      <img src="{rel(PNG_TIME)}" alt="time-colored"/>
+      <div class="small">Source: <code>{rel(PNG_TIME)}</code></div>
+    </div>
+
+    <div class="card">
+      <h2>Colored by speed</h2>
+      <img src="{rel(PNG_SPEED)}" alt="speed-colored"/>
+      <div class="small">Source: <code>{rel(PNG_SPEED)}</code></div>
+    </div>
+
+    <div class="card">
+      <h2>Base PNG (matplotlib)</h2>
+      <img src="{rel(PNG_MAIN)}" alt="base-png"/>
+      <div class="small">Source: <code>{rel(PNG_MAIN)}</code></div>
+    </div>
+
+    <div class="card wide">
+      <h2>Anomalies (planned)</h2>
+      <div class="small">
+        Not implemented yet. Planned detectors:
+        <ul>
+          <li>Stops (speed below threshold for N seconds)</li>
+          <li>Teleports (position jump above threshold between frames)</li>
+          <li>Marker swap / orientation flip (theta discontinuity)</li>
+          <li>Tracking loss intervals (gaps, interpolation usage)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+"""
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html)
+
 
 
 if args.save:
@@ -468,6 +655,17 @@ if args.save:
 
 # Показываем matplotlib только если был хотя бы один matplotlib-режим
 if (not args.html and not args.html_anim and not args.heatmap \
-	and not args.time_color and not args.speed_color):
+	and not args.time_color and not args.speed_color and \
+	not args.report):
     plt.show()
+
+
+if args.report:
+    build_report_html(data, REPORT_HTML)
+    print(f"[INFO] Report saved to {REPORT_HTML}")
+
+
+if args.report and not getattr(args, "no_open", False):
+    webbrowser.open(f"file://{REPORT_HTML}")
+
 
