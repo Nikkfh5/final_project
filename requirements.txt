@@ -1,0 +1,10 @@
+# Базовые зависимости для офлайн-трекера и утилит анализа
+numpy>=1.23
+opencv-python-headless>=4.8
+matplotlib>=3.7
+plotly>=5.20
+mplcursors>=0.5
+
+# Тесты/coverage
+pytest>=7.4
+pytest-cov>=4.1

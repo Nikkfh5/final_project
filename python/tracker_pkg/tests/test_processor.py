@@ -5,10 +5,10 @@ import cv2
 import numpy as np
 import pytest
 
-from tracker_pkg.camera import CameraIntrinsics, CameraPose, StaticRayProjector
-from tracker_pkg.detectors import DetectionConfig, MarkerDetector
-from tracker_pkg.pose import PoseEstimator
-from tracker_pkg.processor import ImageSequenceProcessor
+from tracker_pkg.adapters.detection import DetectionConfig, MarkerDetector
+from tracker_pkg.domain.camera import CameraIntrinsics, CameraPose, StaticRayProjector
+from tracker_pkg.domain.pose import PoseEstimator
+from tracker_pkg.usecases.image_sequence import ImageSequenceProcessor
 
 
 def _draw_frame(path: Path, red_px, blue_px):

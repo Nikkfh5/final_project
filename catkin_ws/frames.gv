@@ -1,7 +1,0 @@
-digraph G {
-"world" -> "camera_link"[label="Broadcaster: /world_to_camera_tf\nAverage rate: 10000.000 Hz\nMost recent transform: 0.000 ( 17.955 sec old)\nBuffer length: 0.000 sec\n"];
-edge [style=invis];
- subgraph cluster_legend { style=bold; color=black; label ="view_frames Result";
-"Recorded at time: 17.955"[ shape=plaintext ] ;
- }->"world";
-}

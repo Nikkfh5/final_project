@@ -102,3 +102,9 @@ python3 -m pytest --cov=tracker_pkg --cov-report=term-missing
 - `python/tracker_pkg` — офлайн ядро + CLI + tests + Dockerfile.
 - `catkin_ws/samples` — примеры/ваши кадры и результаты офлайн обработки.
 - `tracker_logs` — логи онлайн трекера (JSON/PNG).
+
+Ядро `tracker_pkg` (и в ROS-пакете, и в offline-пакете) разложено по слоям:
+- `domain/` — чистые модели и расчеты (интринсики/проекция, позы, траектория).
+- `adapters/` — работа с внешними библиотеками (OpenCV детектор маркеров).
+- `usecases/` — прикладные сценарии (обработка последовательности изображений).
+- `plot_trajectory_interactive.py` — инфраструктура/аналитика для готовых логов.

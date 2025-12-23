@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from tracker_pkg.camera import CameraIntrinsics, CameraPose, StaticRayProjector
+from tracker_pkg.domain.camera import CameraIntrinsics, CameraPose, StaticRayProjector
 
 
 def test_pixel_to_world_hits_ground_plane():

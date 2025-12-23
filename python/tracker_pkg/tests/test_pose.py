@@ -1,6 +1,6 @@
 import pytest
 
-from tracker_pkg.pose import PoseEstimator
+from tracker_pkg.domain.pose import PoseEstimator
 
 
 def test_pose_estimator_validates_distance_and_smoothes():

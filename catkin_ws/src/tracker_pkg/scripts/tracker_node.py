@@ -29,7 +29,7 @@ from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 from std_srvs.srv import Trigger, TriggerResponse
 import tf2_ros
-from tracker_pkg.detectors import MarkerDetector, DetectionConfig
+from tracker_pkg.adapters.detection import DetectionConfig, MarkerDetector
 
 
 class TrackerNode:
@@ -636,14 +636,14 @@ class TrackerNode:
         debug_image = cv_image.copy()
 
         detections = self.detector.detect(cv_image)
-        red_candidates = detections.get("red", [])
-        blue_candidates = detections.get("blue", [])
+        red_candidates = detections.get("red_candidates", [])
+        blue_candidates = detections.get("blue_candidates", [])
 
         for r in red_candidates:
             cv2.circle(
                 debug_image,
-                (r["x"], r["y"]),
-                int(max(3, r["radius"])),
+                (r.x, r.y),
+                int(max(3, r.radius)),
                 (0, 0, 150),
                 1,
             )
@@ -651,16 +651,16 @@ class TrackerNode:
         for b in blue_candidates:
             cv2.circle(
                 debug_image,
-                (b["x"], b["y"]),
-                int(max(3, b["radius"])),
+                (b.x, b.y),
+                int(max(3, b.radius)),
                 (150, 0, 0),
                 1,
             )
 
         red_det, blue_det = self._select_best_pair(red_candidates, blue_candidates)
 
-        red_center = (red_det["x"], red_det["y"]) if red_det else None
-        blue_center = (blue_det["x"], blue_det["y"]) if blue_det else None
+        red_center = red_det.center if red_det else detections.get("red")
+        blue_center = blue_det.center if blue_det else detections.get("blue")
 
         # Добавляем отладочный текст
         status_text = f"Red: {'FOUND' if red_center else 'NOT FOUND'}, Blue: {'FOUND' if blue_center else 'NOT FOUND'}"
@@ -961,8 +961,7 @@ class TrackerNode:
         """
         Select the best red-blue marker pair.
 
-        Each candidate is a dict:
-          {x, y, area, radius}
+        Each candidate is a MarkerCandidate with x, y, area, radius.
 
         Returns:
           (red_candidate, blue_candidate) or (None, None)
@@ -975,8 +974,8 @@ class TrackerNode:
 
         for r in reds:
             for b in blues:
-                dx = r["x"] - b["x"]
-                dy = r["y"] - b["y"]
+                dx = r.x - b.x
+                dy = r.y - b.y
                 dist = math.hypot(dx, dy)
 
                 # Distance gating (pixel space!)
@@ -985,8 +984,8 @@ class TrackerNode:
                         continue
 
                 # Size similarity
-                if r["radius"] > 0 and b["radius"] > 0:
-                    radius_ratio = min(r["radius"], b["radius"]) / max(r["radius"], b["radius"])
+                if r.radius > 0 and b.radius > 0:
+                    radius_ratio = min(r.radius, b.radius) / max(r.radius, b.radius)
                 else:
                     radius_ratio = 0.0
 
@@ -1013,4 +1012,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

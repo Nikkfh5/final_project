@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from tracker_pkg.detectors import DetectionConfig, MarkerDetector
+from tracker_pkg.adapters.detection import DetectionConfig, MarkerDetector
 
 
 def test_hsv_detection_finds_markers():

@@ -4,10 +4,10 @@ import argparse
 import math
 import sys
 
-from tracker_pkg.camera import CameraIntrinsics, CameraPose, StaticRayProjector
-from tracker_pkg.detectors import DetectionConfig, MarkerDetector
-from tracker_pkg.pose import PoseEstimator
-from tracker_pkg.processor import ImageSequenceProcessor
+from tracker_pkg.adapters.detection import DetectionConfig, MarkerDetector
+from tracker_pkg.domain.camera import CameraIntrinsics, CameraPose, StaticRayProjector
+from tracker_pkg.domain.pose import PoseEstimator
+from tracker_pkg.usecases.image_sequence import ImageSequenceProcessor
 
 
 def parse_intrinsics(args) -> CameraIntrinsics:

@@ -17,10 +17,10 @@ offline_pkg = PROJECT_ROOT / "python" / "tracker_pkg"
 if offline_pkg.exists() and str(offline_pkg) not in sys.path:
     sys.path.insert(0, str(offline_pkg))
 
-from tracker_pkg.camera import CameraIntrinsics, CameraPose, StaticRayProjector
-from tracker_pkg.detectors import DetectionConfig, MarkerDetector
-from tracker_pkg.pose import PoseEstimator
-from tracker_pkg.processor import ImageSequenceProcessor
+from tracker_pkg.adapters.detection import DetectionConfig, MarkerDetector
+from tracker_pkg.domain.camera import CameraIntrinsics, CameraPose, StaticRayProjector
+from tracker_pkg.domain.pose import PoseEstimator
+from tracker_pkg.usecases.image_sequence import ImageSequenceProcessor
 
 
 def parse_matrix(matrix_str: str) -> CameraIntrinsics:
