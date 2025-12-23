@@ -19,9 +19,16 @@ dev = [
   "pytest>=7.4",
   "pytest-cov>=4.1"
 ]
+viz = [
+  "matplotlib>=3.7",
+  "plotly>=5.20",
+  "mplcursors>=0.5"
+]
 
 [tool.setuptools.packages.find]
-where = ["tracker_pkg"]
+where = ["."]
+include = ["tracker_pkg*"]
+exclude = ["tests*"]
 
 [tool.coverage.run]
 branch = true

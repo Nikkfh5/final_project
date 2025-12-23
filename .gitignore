@@ -4,6 +4,8 @@ __pycache__/
 .pytest_cache/
 .coverage
 python/tracker_pkg/.coverage
+python/.coverage
+*/offline_tracker_pkg.egg-info/
 
 # ROS/catkin build artifacts
 catkin_ws/build/
@@ -22,3 +24,8 @@ catkin_ws/frames.pdf
 # Generated outputs
 tracker_logs/
 catkin_ws/tracker_logs/
+
+# Data samples (keep only placeholders/examples)
+catkin_ws/samples/*
+!catkin_ws/samples/.gitkeep
+!catkin_ws/samples/trajectory.json

@@ -46,7 +46,8 @@ def arrow_head_triangle(x0, y0, th, head_len, head_w):
 
 # === Paths ===
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "..", ".."))
+# Lifted package up one level, so project root is two levels above
+PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
 LOG_DIR = os.path.join(PROJECT_ROOT, "tracker_logs")
 TRAJECTORY_JSON = os.path.join(LOG_DIR, "trajectory.json")
 OUTPUT_PNG = os.path.join(LOG_DIR, "trajectory_interactive.png")
