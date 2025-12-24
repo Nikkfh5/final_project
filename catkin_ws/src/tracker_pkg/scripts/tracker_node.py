@@ -14,6 +14,7 @@ This node:
 import os
 import json
 import csv
+from collections import deque
 import rospy
 import cv2
 import numpy as np
@@ -27,9 +28,102 @@ from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
+from std_msgs.msg import Bool
 from std_srvs.srv import Trigger, TriggerResponse
 import tf2_ros
 from tracker_pkg.adapters.detection import DetectionConfig, MarkerDetector
+
+
+class StopDetector:
+    """
+    Online stop detector based on PoseStamped updates from an external estimator.
+
+    Tracks recent poses in a deque, computes planar speed over a rolling horizon,
+    and reports MOVING/STOPPED state transitions.
+    """
+
+    STATE_MOVING = "MOVING"
+    STATE_STOPPED = "STOPPED"
+
+    def __init__(self, pose_topic="/robot_pose_external"):
+        self.v_eps = float(rospy.get_param('~stop_detector/v_eps', 0.02))
+        self.stop_duration = float(rospy.get_param('~stop_detector/stop_duration', 1.5))
+        self.window_size = int(rospy.get_param('~stop_detector/window_size', 50))
+        self.max_history_sec = float(rospy.get_param('~stop_detector/max_history_sec', 5.0))
+        self.publish_state = rospy.get_param('~stop_detector/publish_state', True)
+        self.stop_state_topic = rospy.get_param('~stop_detector/stop_state_topic', '/robot_stop_state')
+        # Placeholder for future anomaly hooks
+        self.enable_anomaly_hooks = rospy.get_param('~stop_detector/enable_anomaly_hooks', False)
+
+        self.pose_history = deque(maxlen=self.window_size)
+        self.state = None
+        self._last_speed = None
+
+        self.pose_sub = rospy.Subscriber(pose_topic, PoseStamped, self.pose_callback, queue_size=20)
+        self.stop_state_pub = rospy.Publisher(self.stop_state_topic, Bool, queue_size=10) if self.publish_state else None
+        rospy.loginfo("StopDetector listening to %s (v_eps=%.3f m/s, stop_duration=%.2f s)",
+                      pose_topic, self.v_eps, self.stop_duration)
+
+    def pose_callback(self, msg):
+        stamp = msg.header.stamp.to_sec()
+        if stamp == 0.0:
+            stamp = rospy.Time.now().to_sec()
+
+        self.pose_history.append((stamp, msg.pose.position.x, msg.pose.position.y))
+        self._trim_history(stamp)
+        self._evaluate_state()
+
+    def _trim_history(self, current_time):
+        max_age = max(self.stop_duration * 2.0, self.max_history_sec)
+        while len(self.pose_history) > 1 and (current_time - self.pose_history[0][0]) > max_age:
+            self.pose_history.popleft()
+
+    def _evaluate_state(self):
+        if len(self.pose_history) < 2:
+            return
+
+        current_time = self.pose_history[-1][0]
+        horizon_start = current_time - self.stop_duration
+
+        start_entry = None
+        for entry in self.pose_history:
+            if entry[0] <= horizon_start:
+                start_entry = entry
+            else:
+                break
+
+        if start_entry is None:
+            # Not enough history to cover the stop window yet
+            return
+
+        end_entry = self.pose_history[-1]
+        dt = end_entry[0] - start_entry[0]
+        if dt <= 0.0 or dt < self.stop_duration:
+            return
+
+        distance = math.hypot(end_entry[1] - start_entry[1], end_entry[2] - start_entry[2])
+        speed = distance / dt
+        self._last_speed = speed
+
+        new_state = self.STATE_STOPPED if speed < self.v_eps else self.STATE_MOVING
+        if new_state != self.state:
+            self.state = new_state
+            rospy.loginfo("[StopDetector] State=%s (speed=%.3f m/s over %.2fs)", new_state, speed, dt)
+            if self.stop_state_pub is not None:
+                try:
+                    self.stop_state_pub.publish(Bool(data=new_state == self.STATE_STOPPED))
+                except rospy.ROSException:
+                    if rospy.is_shutdown():
+                        return
+
+        self._check_anomaly(speed, dt)
+
+    def _check_anomaly(self, speed, dt):
+        # Reserved for future anomaly detection logic
+        if not self.enable_anomaly_hooks:
+            return
+        # Add anomaly hooks here without affecting current stop detection
+        return
 
 
 class TrackerNode:
@@ -1005,6 +1099,7 @@ class TrackerNode:
 def main():
     try:
         node = TrackerNode()
+        stop_detector = StopDetector(pose_topic=node.pose_topic)
         rospy.spin()
     except rospy.ROSInterruptException:
         pass
