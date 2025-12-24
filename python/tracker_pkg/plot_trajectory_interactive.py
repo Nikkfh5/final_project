@@ -12,6 +12,47 @@ from matplotlib.collections import LineCollection
 from plotly.subplots import make_subplots
 
 
+# --- Configurable thresholds ---
+TELEPORT_SPEED_THRESHOLD = 3.0  # m/s
+MIN_DT = 1e-6
+STOP_TELEPORT_WINDOW = 1.0  # s
+EXCESSIVE_STOP_SHORT_DURATION = 1.0  # s
+EXCESSIVE_STOP_COUNT_THRESHOLD = 3
+EXCESSIVE_STOP_WINDOW = 10.0  # s
+ORIENTATION_FLIP_THRESHOLD = math.pi / 2.0
+
+EVENT_STYLE_MPL = {
+    "TELEPORT": {"color": "black", "marker": "x", "size": 150, "label": "TELEPORT", "linewidth": 2.2},
+    "ANOMALY_STOP_TELEPORT": {
+        "color": "#6a1b9a",
+        "marker": "*",
+        "size": 140,
+        "label": "ANOMALY_STOP_TELEPORT",
+        "linewidth": 1.2,
+    },
+    "ANOMALY_EXCESSIVE_STOPS": {
+        "color": "#ef6c00",
+        "marker": "v",
+        "size": 120,
+        "label": "ANOMALY_EXCESSIVE_STOPS",
+        "linewidth": 1.2,
+    },
+    "ANOMALY_ORIENTATION_FLIP": {
+        "color": "#c2185b",
+        "marker": "D",
+        "size": 110,
+        "label": "ANOMALY_ORIENTATION_FLIP",
+        "linewidth": 1.2,
+    },
+}
+
+EVENT_STYLE_PLOTLY = {
+    "TELEPORT": {"color": "black", "symbol": "x", "size": 14, "name": "TELEPORT"},
+    "ANOMALY_STOP_TELEPORT": {"color": "#6a1b9a", "symbol": "star-diamond", "size": 12, "name": "ANOMALY_STOP_TELEPORT"},
+    "ANOMALY_EXCESSIVE_STOPS": {"color": "#ef6c00", "symbol": "triangle-down", "size": 12, "name": "ANOMALY_EXCESSIVE_STOPS"},
+    "ANOMALY_ORIENTATION_FLIP": {"color": "#c2185b", "symbol": "diamond", "size": 11, "name": "ANOMALY_ORIENTATION_FLIP"},
+}
+
 
 def arrow_head_triangle(x0, y0, th, head_len, head_w):
     """
@@ -47,11 +88,31 @@ def arrow_head_triangle(x0, y0, th, head_len, head_w):
 
 def split_points_and_events(data):
     """
-    Split raw trajectory JSON into trajectory points and stop events.
-    Events with type/event STOP_START/STOP_END are normalized to a common shape.
+    Split raw trajectory JSON into trajectory points and non-point events.
+    Events with type/event STOP_START/STOP_END/TELEPORT/ANOMALY_* are kept in the event list.
     """
     points = []
     events = []
+
+    def append_event(item):
+        if not isinstance(item, dict):
+            return False
+        evt_type = item.get("event") or item.get("type")
+        if not evt_type:
+            return False
+        events.append(
+            {
+                "event": evt_type,
+                "t": float(item.get("t", 0.0)),
+                "x": float(item.get("x", 0.0)),
+                "y": float(item.get("y", 0.0)),
+                "theta": item.get("theta"),
+                "frame": item.get("frame"),
+                "speed": item.get("speed"),
+                "details": item.get("details"),
+            }
+        )
+        return True
 
     events_raw = []
     iterable = []
@@ -59,8 +120,9 @@ def split_points_and_events(data):
         iterable = data
     elif isinstance(data, dict):
         events_raw = data.get("events", [])
-        iterable = data.get("points", [])
-        if all(k in data for k in ["times", "x", "y", "theta"]):
+        if "points" in data:
+            iterable = data.get("points", [])
+        elif all(k in data for k in ["times", "x", "y", "theta"]):
             frames = data.get("frames")
             for idx, (t_val, x_val, y_val, th_val) in enumerate(
                 zip(data["times"], data["x"], data["y"], data["theta"])
@@ -75,34 +137,13 @@ def split_points_and_events(data):
         raise ValueError("Unsupported trajectory JSON structure")
 
     for item in iterable:
-        if not isinstance(item, dict):
+        if append_event(item):
             continue
-        evt_type = item.get("event") or item.get("type")
-        if evt_type in ("STOP_START", "STOP_END"):
-            events.append(
-                {
-                    "event": evt_type,
-                    "t": float(item.get("t", 0.0)),
-                    "x": float(item.get("x", 0.0)),
-                    "y": float(item.get("y", 0.0)),
-                }
-            )
-            continue
-        points.append(item)
+        if isinstance(item, dict):
+            points.append(item)
 
     for item in events_raw:
-        if not isinstance(item, dict):
-            continue
-        evt_type = item.get("event") or item.get("type")
-        if evt_type in ("STOP_START", "STOP_END"):
-            events.append(
-                {
-                    "event": evt_type,
-                    "t": float(item.get("t", 0.0)),
-                    "x": float(item.get("x", 0.0)),
-                    "y": float(item.get("y", 0.0)),
-                }
-            )
+        append_event(item)
 
     events.sort(key=lambda e: e["t"])
     return points, events
@@ -158,6 +199,210 @@ def is_stopped_at(time_value, intervals):
     return False
 
 
+def detect_teleports(points, v_threshold):
+    """Detect position jumps where implied speed exceeds v_threshold."""
+    teleports = []
+    for i in range(1, len(points)):
+        curr = points[i]
+        prev = points[i - 1]
+        dt = float(curr.get("t", 0.0)) - float(prev.get("t", 0.0))
+        if dt <= MIN_DT:
+            continue
+        dx = float(curr.get("x", 0.0)) - float(prev.get("x", 0.0))
+        dy = float(curr.get("y", 0.0)) - float(prev.get("y", 0.0))
+        speed = math.hypot(dx, dy) / dt
+        if speed > v_threshold:
+            teleports.append(
+                {
+                    "event": "TELEPORT",
+                    "t": float(curr.get("t", 0.0)),
+                    "x": float(curr.get("x", 0.0)),
+                    "y": float(curr.get("y", 0.0)),
+                    "frame": curr.get("frame", i),
+                    "speed": speed,
+                }
+            )
+    return teleports
+
+
+def compute_quality_metrics(points, stop_intervals, teleports):
+    """Compute aggregate tracking quality metrics."""
+    if not points:
+        return {
+            "total_duration": 0.0,
+            "total_distance": 0.0,
+            "avg_speed": 0.0,
+            "max_speed": 0.0,
+            "stopped_time": 0.0,
+            "moving_time": 0.0,
+            "stop_count": 0,
+            "teleport_count": len(teleports),
+            "percent_stopped": 0.0,
+            "percent_moving": 0.0,
+        }
+
+    times = [float(p.get("t", 0.0)) for p in points]
+    xs = [float(p.get("x", 0.0)) for p in points]
+    ys = [float(p.get("y", 0.0)) for p in points]
+
+    total_duration = max(times) - min(times) if len(times) > 1 else 0.0
+    total_distance = 0.0
+    speeds_local = []
+
+    for i in range(len(points) - 1):
+        dx = xs[i + 1] - xs[i]
+        dy = ys[i + 1] - ys[i]
+        dt = times[i + 1] - times[i]
+        if dt <= MIN_DT:
+            continue
+        step_dist = math.hypot(dx, dy)
+        total_distance += step_dist
+        speeds_local.append(step_dist / dt)
+
+    avg_speed = (total_distance / total_duration) if total_duration > 0 else 0.0
+    max_speed = max(speeds_local) if speeds_local else 0.0
+    stopped_time = sum(iv["duration"] for iv in stop_intervals)
+    moving_time = max(0.0, total_duration - stopped_time)
+
+    return {
+        "total_duration": total_duration,
+        "total_distance": total_distance,
+        "avg_speed": avg_speed,
+        "max_speed": max_speed,
+        "stopped_time": stopped_time,
+        "moving_time": moving_time,
+        "stop_count": len(stop_intervals),
+        "teleport_count": len(teleports),
+        "percent_stopped": (stopped_time / total_duration * 100.0) if total_duration > 0 else 0.0,
+        "percent_moving": (moving_time / total_duration * 100.0) if total_duration > 0 else 0.0,
+    }
+
+
+def detect_behavioral_anomalies(points, stop_intervals, teleports):
+    """Detect behavioral anomalies using stops, teleports, and orientation changes."""
+    anomalies = []
+
+    # A) TELEPORT soon after STOP_END
+    stop_end_times = [iv["end"]["t"] for iv in stop_intervals]
+    for tp in teleports:
+        t_tp = tp.get("t", 0.0)
+        for end_t in stop_end_times:
+            delta = t_tp - end_t
+            if 0.0 <= delta <= STOP_TELEPORT_WINDOW:
+                anomalies.append(
+                    {
+                        "event": "ANOMALY_STOP_TELEPORT",
+                        "t": t_tp,
+                        "x": tp.get("x", 0.0),
+                        "y": tp.get("y", 0.0),
+                        "details": {
+                            "delta_t": delta,
+                            "stop_end": end_t,
+                            "teleport_speed": tp.get("speed"),
+                        },
+                    }
+                )
+                break
+
+    # B) Excessive short stops in a time window
+    short_stops = [iv for iv in stop_intervals if iv["duration"] < EXCESSIVE_STOP_SHORT_DURATION]
+    short_stops.sort(key=lambda iv: iv["start"]["t"])
+    i = 0
+    while i < len(short_stops):
+        window_start = short_stops[i]["start"]["t"]
+        j = i
+        while j < len(short_stops) and (short_stops[j]["start"]["t"] - window_start) <= EXCESSIVE_STOP_WINDOW:
+            j += 1
+        count = j - i
+        if count > EXCESSIVE_STOP_COUNT_THRESHOLD:
+            ref_iv = short_stops[j - 1]
+            anomalies.append(
+                {
+                    "event": "ANOMALY_EXCESSIVE_STOPS",
+                    "t": ref_iv["end"]["t"],
+                    "x": ref_iv["end"]["x"],
+                    "y": ref_iv["end"]["y"],
+                    "details": {
+                        "count": count,
+                        "window": EXCESSIVE_STOP_WINDOW,
+                        "threshold": EXCESSIVE_STOP_COUNT_THRESHOLD,
+                    },
+                }
+            )
+        i += 1
+
+    # C) Orientation flip between frames
+    for i in range(1, len(points)):
+        prev_th = float(points[i - 1].get("theta", 0.0))
+        th = float(points[i].get("theta", 0.0))
+        dtheta = math.atan2(math.sin(th - prev_th), math.cos(th - prev_th))
+        if abs(dtheta) > ORIENTATION_FLIP_THRESHOLD:
+            anomalies.append(
+                {
+                    "event": "ANOMALY_ORIENTATION_FLIP",
+                    "t": float(points[i].get("t", 0.0)),
+                    "x": float(points[i].get("x", 0.0)),
+                    "y": float(points[i].get("y", 0.0)),
+                    "details": {"delta_theta": dtheta},
+                }
+            )
+
+    anomalies.sort(key=lambda e: e["t"])
+    return anomalies
+
+
+def merge_events(existing, new):
+    """Merge two event lists, deduplicating by (event, t, x, y)."""
+    merged = []
+    seen = set()
+    for src in (existing, new):
+        for evt in src:
+            key = (
+                evt.get("event"),
+                round(float(evt.get("t", 0.0)), 6),
+                round(float(evt.get("x", 0.0)), 4),
+                round(float(evt.get("y", 0.0)), 4),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(evt)
+    merged.sort(key=lambda e: e.get("t", 0.0))
+    return merged
+
+
+def build_augmented_payload(raw_data, points, events):
+    """Create a normalized trajectory payload with top-level points/events."""
+    payload = dict(raw_data) if isinstance(raw_data, dict) else {}
+    payload["points"] = points
+    payload["events"] = events
+    return payload
+
+
+def format_anomaly_description(evt):
+    """Human-readable anomaly description."""
+    details = evt.get("details") or {}
+    evt_type = evt.get("event", "")
+    if evt_type == "ANOMALY_STOP_TELEPORT":
+        delta_t = details.get("delta_t", 0.0)
+        speed = details.get("teleport_speed")
+        parts = [f"Teleport {delta_t:.2f}s after STOP_END"]
+        if speed is not None:
+            parts.append(f"speed={speed:.2f} m/s")
+        return ", ".join(parts)
+    if evt_type == "ANOMALY_EXCESSIVE_STOPS":
+        count = details.get("count")
+        window = details.get("window")
+        threshold = details.get("threshold")
+        return f"{count} short stops (<{EXCESSIVE_STOP_SHORT_DURATION:.1f}s) in {window}s (>{threshold})"
+    if evt_type == "ANOMALY_ORIENTATION_FLIP":
+        dtheta = details.get("delta_theta")
+        if dtheta is None:
+            return "Orientation flip"
+        return f"|Δtheta|={abs(dtheta):.2f} rad ({math.degrees(abs(dtheta)):.1f}°)"
+    return evt_type
+
+
 def plot_stop_annotations(ax, stop_events, stop_intervals):
     """Overlay stop start/end markers and duration labels on a matplotlib axis."""
     if not stop_events:
@@ -186,6 +431,59 @@ def plot_stop_annotations(ax, stop_events, stop_intervals):
             bbox=dict(facecolor="white", alpha=0.75, edgecolor="none"),
             zorder=6,
         )
+
+
+def plot_event_markers(ax, events, event_type):
+    """Scatter helper for teleports/anomalies on matplotlib axes."""
+    style = EVENT_STYLE_MPL.get(event_type)
+    if not style or not events:
+        return
+    xs = [e.get("x", 0.0) for e in events]
+    ys = [e.get("y", 0.0) for e in events]
+    ax.scatter(
+        xs,
+        ys,
+        s=style["size"],
+        c=style["color"],
+        marker=style["marker"],
+        label=style["label"],
+        linewidths=style.get("linewidth", 1.0),
+        zorder=6,
+    )
+
+
+def add_plotly_events(fig, events, event_type, row, col):
+    """Add plotly scatter for teleports/anomalies."""
+    style = EVENT_STYLE_PLOTLY.get(event_type)
+    if not style or not events:
+        return
+    hover_text = []
+    for evt in events:
+        base = (
+            f"{event_type}<br>"
+            f"t: {evt.get('t', 0.0):.2f}s<br>"
+            f"x: {evt.get('x', 0.0):.3f} m<br>"
+            f"y: {evt.get('y', 0.0):.3f} m"
+        )
+        if event_type == "TELEPORT":
+            spd = evt.get("speed")
+            speed_part = f"<br>speed: {spd:.2f} m/s" if spd is not None else ""
+            hover_text.append(base + speed_part)
+        else:
+            hover_text.append(base + "<br>" + format_anomaly_description(evt))
+    fig.add_trace(
+        go.Scatter(
+            x=[e.get("x", 0.0) for e in events],
+            y=[e.get("y", 0.0) for e in events],
+            mode="markers",
+            marker=dict(color=style["color"], symbol=style["symbol"], size=style["size"]),
+            name=style.get("name", event_type),
+            hoverinfo="text",
+            text=hover_text,
+        ),
+        row=row,
+        col=col,
+    )
 
 
 # === Paths ===
@@ -278,10 +576,26 @@ if not os.path.exists(TRAJECTORY_JSON):
 with open(TRAJECTORY_JSON) as f:
     raw_data = json.load(f)
 
-points, stop_events = split_points_and_events(raw_data)
+points, events = split_points_and_events(raw_data)
 trajectory_points = points
 if not points:
     raise ValueError("No trajectory points found in trajectory.json")
+
+stop_events = [e for e in events if e["event"] in ("STOP_START", "STOP_END")]
+stop_intervals = build_stop_intervals(stop_events)
+
+existing_teleports = [e for e in events if e["event"] == "TELEPORT"]
+teleports_detected = detect_teleports(points, TELEPORT_SPEED_THRESHOLD)
+teleports_for_detection = merge_events(existing_teleports, teleports_detected)
+anomalies_detected = detect_behavioral_anomalies(points, stop_intervals, teleports_for_detection)
+
+events = merge_events(events, teleports_detected + anomalies_detected)
+stop_events = [e for e in events if e["event"] in ("STOP_START", "STOP_END")]
+teleports = [e for e in events if e["event"] == "TELEPORT"]
+anomaly_events = [e for e in events if str(e.get("event", "")).startswith("ANOMALY_")]
+anomalies_by_type = {}
+for evt in anomaly_events:
+    anomalies_by_type.setdefault(evt["event"], []).append(evt)
 
 stop_intervals = build_stop_intervals(stop_events)
 timeline_segments = build_timeline_segments([p.get("t", 0.0) for p in points], stop_intervals)
@@ -296,10 +610,32 @@ t = [p.get("t", 0.0) for p in points]
 theta = [p.get("theta", 0.0) for p in points]
 frame = [p.get("frame", idx) for idx, p in enumerate(points)]
 
+quality_metrics = compute_quality_metrics(points, stop_intervals, teleports)
+
 print(f"[INFO] Loaded {len(points)} trajectory points from {TRAJECTORY_JSON}")
 if stop_intervals:
     total_stopped = sum(iv["duration"] for iv in stop_intervals)
     print(f"[INFO] Detected {len(stop_intervals)} stop intervals (stopped {total_stopped:.2f}s)")
+print(f"[INFO] Teleport detector threshold: {TELEPORT_SPEED_THRESHOLD:.2f} m/s; detected {len(teleports)}")
+if anomaly_events:
+    counts_by_type = {}
+    for evt in anomaly_events:
+        counts_by_type[evt["event"]] = counts_by_type.get(evt["event"], 0) + 1
+    summary_parts = [f"{k}={v}" for k, v in counts_by_type.items()]
+    print(f"[INFO] Behavioral anomalies: {', '.join(summary_parts)}")
+print(
+    "[INFO] Tracking quality — duration: {:.2f}s, distance: {:.2f} m, avg speed: {:.3f} m/s, max speed: {:.3f} m/s".format(
+        quality_metrics["total_duration"],
+        quality_metrics["total_distance"],
+        quality_metrics["avg_speed"],
+        quality_metrics["max_speed"],
+    )
+)
+
+augmented_payload = build_augmented_payload(raw_data, trajectory_points, events)
+with open(TRAJECTORY_JSON, "w") as f:
+    json.dump(augmented_payload, f, indent=2)
+print(f"[INFO] trajectory.json updated with {len(events)} events (including teleports/anomalies)")
 
 speeds = []
 
@@ -308,7 +644,7 @@ for i in range(len(x) - 1):
     dy = y[i + 1] - y[i]
     dt = t[i + 1] - t[i]
 
-    if dt > 1e-6:
+    if dt > MIN_DT:
         v = math.hypot(dx, dy) / dt
     else:
         v = 0.0
@@ -421,6 +757,12 @@ if args.html:
             row=1,
             col=1,
         )
+
+    if teleports:
+        add_plotly_events(fig_html, teleports, "TELEPORT", 1, 1)
+
+    for evt_type, evt_list in anomalies_by_type.items():
+        add_plotly_events(fig_html, evt_list, evt_type, 1, 1)
 
     timeline = timeline_segments if timeline_segments else [
         {"state": "MOVING", "start": t_min, "end": t_axis_max, "duration": t_span}
@@ -715,6 +1057,9 @@ if args.time_color:
     ax_tc.scatter(x[0], y[0], c="green", s=80, label="start")
     ax_tc.scatter(x[-1], y[-1], c="red", s=80, label="end")
     plot_stop_annotations(ax_tc, stop_events, stop_intervals)
+    plot_event_markers(ax_tc, teleports, "TELEPORT")
+    for evt_type, evt_list in anomalies_by_type.items():
+        plot_event_markers(ax_tc, evt_list, evt_type)
 
     ax_tc.set_title("Trajectory colored by time")
     ax_tc.set_xlabel("X (m)")
@@ -757,6 +1102,9 @@ if args.speed_color:
     ax_sc.scatter(x[0], y[0], c="green", s=80, label="start")
     ax_sc.scatter(x[-1], y[-1], c="red", s=80, label="end")
     plot_stop_annotations(ax_sc, stop_events, stop_intervals)
+    plot_event_markers(ax_sc, teleports, "TELEPORT")
+    for evt_type, evt_list in anomalies_by_type.items():
+        plot_event_markers(ax_sc, evt_list, evt_type)
 
     ax_sc.set_title("Trajectory colored by speed")
     ax_sc.set_xlabel("X (m)")
@@ -786,6 +1134,9 @@ scatter = ax.scatter(x, y, s=15, c="blue")
 ax.scatter(x[0], y[0], c="green", s=80, label="start")
 ax.scatter(x[-1], y[-1], c="red", s=80, label="end")
 plot_stop_annotations(ax, stop_events, stop_intervals)
+plot_event_markers(ax, teleports, "TELEPORT")
+for evt_type, evt_list in anomalies_by_type.items():
+    plot_event_markers(ax, evt_list, evt_type)
 
 ax.set_title("Robot trajectory")
 ax.set_xlabel("X (m)")
@@ -811,26 +1162,25 @@ def on_add(sel):
     )
     sel.annotation.get_bbox_patch().set(alpha=0.9)
     
-def build_report_html(points, stop_intervals, timeline_segments, output_path):
-    """Compose a single-page HTML report with trajectory and stop analysis."""
+def build_report_html(points, stop_intervals, timeline_segments, teleports, anomalies, quality_metrics, output_path):
+    """Compose a single-page HTML report with trajectory, quality, and anomaly analysis."""
     xs = [p.get("x", 0.0) for p in points]
     ys = [p.get("y", 0.0) for p in points]
     ts = [p.get("t", 0.0) for p in points]
-    thetas = [p.get("theta", 0.0) for p in points]
 
     n = len(xs)
     t0, t1 = (min(ts), max(ts)) if ts else (0.0, 0.0)
-    duration = (t1 - t0) if ts else 0.0
-    stop_count = len(stop_intervals)
+    duration = quality_metrics.get("total_duration", (t1 - t0) if ts else 0.0)
+    stop_count = quality_metrics.get("stop_count", len(stop_intervals))
     total_stopped = sum(iv["duration"] for iv in stop_intervals)
-
-    speeds_local = []
-    for i in range(n - 1):
-        dt = ts[i + 1] - ts[i]
-        if dt > 1e-6:
-            speeds_local.append(math.hypot(xs[i + 1] - xs[i], ys[i + 1] - ys[i]) / dt)
-    v_avg = float(np.mean(speeds_local)) if speeds_local else 0.0
-    v_max = float(np.max(speeds_local)) if speeds_local else 0.0
+    teleport_count = quality_metrics.get("teleport_count", len(teleports))
+    anomaly_count = len(anomalies)
+    v_avg = quality_metrics.get("avg_speed", 0.0)
+    v_max = quality_metrics.get("max_speed", 0.0)
+    total_distance = quality_metrics.get("total_distance", 0.0)
+    moving_time = quality_metrics.get("moving_time", 0.0)
+    percent_stopped = quality_metrics.get("percent_stopped", 0.0)
+    percent_moving = quality_metrics.get("percent_moving", 0.0)
 
     def rel(p):
         return os.path.basename(p)
@@ -859,6 +1209,48 @@ def build_report_html(points, stop_intervals, timeline_segments, output_path):
     )
     if not rows_html:
         rows_html = '<tr><td colspan="6">No stop intervals detected.</td></tr>'
+
+    teleport_rows = "".join(
+        "<tr>"
+        f"<td>{idx}</td>"
+        f"<td>{tp.get('t', 0.0):.2f}</td>"
+        f"<td>{tp.get('x', 0.0):.3f}</td>"
+        f"<td>{tp.get('y', 0.0):.3f}</td>"
+        f"<td>{tp.get('speed', 0.0) if tp.get('speed') is not None else 0.0:.2f}</td>"
+        f"<td>{tp.get('frame', '-')}</td>"
+        "</tr>"
+        for idx, tp in enumerate(teleports, 1)
+    )
+    if not teleport_rows:
+        teleport_rows = '<tr><td colspan="6">No teleports detected.</td></tr>'
+
+    anomaly_rows = "".join(
+        "<tr>"
+        f"<td>{evt.get('event', '')}</td>"
+        f"<td>{evt.get('t', 0.0):.2f}</td>"
+        f"<td>{evt.get('x', 0.0):.3f}</td>"
+        f"<td>{evt.get('y', 0.0):.3f}</td>"
+        f"<td>{format_anomaly_description(evt)}</td>"
+        "</tr>"
+        for evt in anomalies
+    )
+    if not anomaly_rows:
+        anomaly_rows = '<tr><td colspan="5">No anomalies detected.</td></tr>'
+
+    quality_cards = f"""
+      <div class="stats">
+        <div class="item"><strong>{duration:.2f}s</strong><span>Total duration</span></div>
+        <div class="item"><strong>{total_distance:.2f} m</strong><span>Total distance</span></div>
+        <div class="item"><strong>{v_avg:.3f} m/s</strong><span>Avg speed</span></div>
+        <div class="item"><strong>{v_max:.3f} m/s</strong><span>Max speed</span></div>
+        <div class="item"><strong>{total_stopped:.2f}s</strong><span>Stopped time</span></div>
+        <div class="item"><strong>{moving_time:.2f}s</strong><span>Moving time</span></div>
+        <div class="item"><strong>{stop_count}</strong><span>Stops</span></div>
+        <div class="item"><strong>{teleport_count}</strong><span>Teleports</span></div>
+        <div class="item"><strong>{percent_stopped:.1f}%</strong><span>Percent stopped</span></div>
+        <div class="item"><strong>{percent_moving:.1f}%</strong><span>Percent moving</span></div>
+      </div>
+    """
 
     html = f"""<!doctype html>
 <html lang="en">
@@ -974,7 +1366,9 @@ def build_report_html(points, stop_intervals, timeline_segments, output_path):
     Points: <b>{n}</b> &nbsp;|&nbsp;
     Duration: <b>{duration:.2f}s</b> &nbsp;|&nbsp;
     Avg speed: <b>{v_avg:.3f} m/s</b> &nbsp;|&nbsp;
-    Max speed: <b>{v_max:.3f} m/s</b>
+    Max speed: <b>{v_max:.3f} m/s</b> &nbsp;|&nbsp;
+    Teleports: <b>{teleport_count}</b> &nbsp;|&nbsp;
+    Anomalies: <b>{anomaly_count}</b>
   </div>
 
   <div class="grid">
@@ -1015,6 +1409,11 @@ def build_report_html(points, stop_intervals, timeline_segments, output_path):
     </div>
 
     <div class="card wide">
+      <h2>Tracking Quality Summary</h2>
+      {quality_cards}
+    </div>
+
+    <div class="card wide">
       <h2>Stop Analysis</h2>
       <div class="stats">
         <div class="item"><strong>{stop_count}</strong><span>Stops</span></div>
@@ -1034,22 +1433,35 @@ def build_report_html(points, stop_intervals, timeline_segments, output_path):
     </div>
 
     <div class="card wide">
-      <h2>Timeline</h2>
-      {render_timeline()}
-      <div class="small">Green = MOVING, Red = STOPPED</div>
+      <h2>Teleports</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Time (s)</th><th>X</th><th>Y</th><th>Speed (m/s)</th><th>Frame</th>
+          </tr>
+        </thead>
+        <tbody>
+          {teleport_rows}
+        </tbody>
+      </table>
     </div>
 
     <div class="card wide">
-      <h2>Anomalies (planned)</h2>
-      <div class="small">
-        Not implemented yet. Planned detectors:
-        <ul>
-          <li>Stops (speed below threshold for N seconds)</li>
-          <li>Teleports (position jump above threshold between frames)</li>
-          <li>Marker swap / orientation flip (theta discontinuity)</li>
-          <li>Tracking loss intervals (gaps, interpolation usage)</li>
-        </ul>
-      </div>
+      <h2>Behavioral Anomalies</h2>
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Time (s)</th><th>X</th><th>Y</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          {anomaly_rows}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card wide">
+      <h2>Timeline</h2>
+      {render_timeline()}
+      <div class="small">Green = MOVING, Red = STOPPED</div>
     </div>
   </div>
 </body>
@@ -1072,7 +1484,15 @@ if (not args.html and not args.html_anim and not args.heatmap \
 
 
 if args.report:
-    build_report_html(trajectory_points, stop_intervals, timeline_segments, REPORT_HTML)
+    build_report_html(
+        trajectory_points,
+        stop_intervals,
+        timeline_segments,
+        teleports,
+        anomaly_events,
+        quality_metrics,
+        REPORT_HTML,
+    )
     print(f"[INFO] Report saved to {REPORT_HTML}")
 
 

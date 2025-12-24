@@ -70,7 +70,7 @@ def read_json_trajectory(filename):
     Read trajectory from JSON file.
     
     Expected format: list of dicts with keys 't', 'x', 'y', 'theta' [, 'frame']
-    or dict with keys 'times', 'x', 'y', 'theta' [, 'frames'] as arrays
+    or dict with keys 'points' + optional 'events', or dict with keys 'times', 'x', 'y', 'theta' [, 'frames'] as arrays
     
     Args:
         filename: Path to JSON file
@@ -95,7 +95,18 @@ def read_json_trajectory(filename):
         theta = [item.get('theta') for item in point_items]
         frames = [item.get('frame') for item in point_items] if any('frame' in item for item in point_items) else None
     elif isinstance(data, dict):
-        if all(k in data for k in ['times', 'x', 'y', 'theta']):
+        if "points" in data:
+            point_items = []
+            for item in data.get("points", []):
+                if isinstance(item, dict) and (item.get("event") or item.get("type")):
+                    continue
+                point_items.append(item)
+            times = [item.get('t') for item in point_items]
+            x = [item.get('x') for item in point_items]
+            y = [item.get('y') for item in point_items]
+            theta = [item.get('theta') for item in point_items]
+            frames = [item.get('frame') for item in point_items] if any('frame' in item for item in point_items) else None
+        elif all(k in data for k in ['times', 'x', 'y', 'theta']):
             times = data['times']
             x = data['x']
             y = data['y']
