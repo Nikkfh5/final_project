@@ -41,3 +41,49 @@ def test_sequence_processor_builds_expected_trajectory(tmp_path: Path):
     for point, expected in zip(trajectory.points, expected_positions):
         assert point.pose.x == pytest.approx(expected[0], rel=1e-2)
         assert point.pose.y == pytest.approx(expected[1], rel=1e-2)
+
+
+def test_sequence_processor_skips_invalid_frames(monkeypatch, tmp_path: Path):
+    # Frame skip validation
+    with pytest.raises(ValueError):
+        ImageSequenceProcessor(detector=None, projector=None, estimator=None, frame_skip=0)
+
+    # Stubs that trigger skip branches
+    class DummyDetector:
+        def __init__(self):
+            self.calls = 0
+
+        def detect(self, img):
+            self.calls += 1
+            if self.calls == 1:
+                return {"red": None, "blue": (0, 0)}  # missing marker
+            return {"red": (0, 0), "blue": (1, 1)}  # projector will nullify
+
+    class DummyProjector:
+        def pixel_to_world(self, u, v):
+            return None  # forces skip at red_world/blue_world check
+
+    class DummyEstimator:
+        def estimate(self, r, b):
+            return None
+
+    # Prepare fake files
+    paths = [tmp_path / f"frame_{i}.png" for i in range(3)]
+    for p in paths:
+        p.write_bytes(b"dummy")
+
+    processor = ImageSequenceProcessor(
+        detector=DummyDetector(),
+        projector=DummyProjector(),
+        estimator=DummyEstimator(),
+        frame_skip=2,
+        time_step=0.1,
+    )
+
+    # Patch file collection and imread to avoid real images
+    monkeypatch.setattr(ImageSequenceProcessor, "_collect_images", lambda self, _: [str(p) for p in paths])
+    monkeypatch.setattr(cv2, "imread", lambda path: None if path.endswith("1.png") else np.zeros((2, 2, 3), dtype=np.uint8))
+
+    trajectory = processor.process_directory(str(tmp_path))
+    # All frames should be skipped (missing marker, frame_skip on idx=1, projector None)
+    assert len(trajectory) == 0

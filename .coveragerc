@@ -1,0 +1,13 @@
+[run]
+branch = True
+source = tracker_pkg
+omit =
+    python/tracker_pkg/plot_trajectory_interactive.py
+    python/tracker_pkg/scripts/offline_processor.py
+    python/tracker_pkg/scripts/offline_visualizer.py
+
+[report]
+omit =
+    python/tracker_pkg/plot_trajectory_interactive.py
+    python/tracker_pkg/scripts/offline_processor.py
+    python/tracker_pkg/scripts/offline_visualizer.py

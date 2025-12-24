@@ -23,7 +23,6 @@ catkin_ws/frames.pdf
 
 # Generated outputs
 tracker_logs/
-catkin_ws/tracker_logs/
 
 # Data samples (keep only placeholders/examples)
 catkin_ws/samples/*

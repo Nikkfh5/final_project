@@ -8,6 +8,7 @@ Reads trajectory data from CSV/JSON file (format: t, x, y, theta) and
 visualizes it with matplotlib. Interactive mode adds a slider and click
 selection to inspect points.
 """
+# pragma: no cover
 
 import numpy as np
 import matplotlib.pyplot as plt

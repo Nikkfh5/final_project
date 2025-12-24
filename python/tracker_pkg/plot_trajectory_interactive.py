@@ -1,3 +1,6 @@
+"""Interactive analysis script (excluded from test coverage)."""
+# pragma: no cover
+
 import plotly.graph_objects as go
 import webbrowser
 import sys
@@ -924,12 +927,10 @@ if anomaly_events:
 print(f"[INFO] Speed anomalies detected: {speed_anomaly_count}")
 print(f"[INFO] Max speed anomaly: {max_speed_anomaly:.3f} m/s")
 print(
-    "[INFO] Tracking quality — duration: {:.2f}s, distance: {:.2f} m, avg speed: {:.3f} m/s, max speed: {:.3f} m/s".format(
-        quality_metrics["total_duration"],
-        quality_metrics["total_distance"],
-        quality_metrics["avg_speed"],
-        quality_metrics["max_speed"],
-    )
+    f"[INFO] Tracking quality - duration: {quality_metrics['total_duration']:.2f}s, "
+    f"distance: {quality_metrics['total_distance']:.2f} m, "
+    f"avg speed: {quality_metrics['avg_speed']:.3f} m/s, "
+    f"max speed: {quality_metrics['max_speed']:.3f} m/s"
 )
 
 augmented_payload = build_augmented_payload(raw_data, trajectory_points, events)

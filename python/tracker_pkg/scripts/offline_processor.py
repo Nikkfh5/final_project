@@ -1,3 +1,6 @@
+"""CLI entrypoint for offline processing (excluded from coverage)."""
+# pragma: no cover
+
 import argparse
 import math
 import sys
