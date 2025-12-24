@@ -10,5 +10,19 @@ if [ ! -f "$TRAJ_FILE" ]; then
   exit 1
 fi
 
-# Пробрасываем все аргументы дальше
-python3 "$ANALYSIS_SCRIPT" "$@"
+ARGS=()
+GENERATE_ALL=false
+for arg in "$@"; do
+  if [[ "$arg" == "--all" ]]; then
+    GENERATE_ALL=true
+  else
+    ARGS+=("$arg")
+  fi
+done
+
+if $GENERATE_ALL; then
+  echo "[INFO] --all selected: generating PNGs, interactive HTML, animation, and report..."
+  python3 "$ANALYSIS_SCRIPT" --all "${ARGS[@]}"
+else
+  python3 "$ANALYSIS_SCRIPT" "${ARGS[@]}"
+fi

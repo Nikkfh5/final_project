@@ -58,6 +58,7 @@ class StopDetector:
         self.pose_history = deque(maxlen=self.window_size)
         self.state = None
         self._last_speed = None
+        self._events = []
 
         self.pose_sub = rospy.Subscriber(pose_topic, PoseStamped, self.pose_callback, queue_size=20)
         self.stop_state_pub = rospy.Publisher(self.stop_state_topic, Bool, queue_size=10) if self.publish_state else None
@@ -107,8 +108,14 @@ class StopDetector:
 
         new_state = self.STATE_STOPPED if speed < self.v_eps else self.STATE_MOVING
         if new_state != self.state:
+            prev_state = self.state
             self.state = new_state
             rospy.loginfo("[StopDetector] State=%s (speed=%.3f m/s over %.2fs)", new_state, speed, dt)
+            if prev_state is None and new_state == self.STATE_STOPPED:
+                self._record_event("STOP_START", end_entry)
+            elif prev_state is not None:
+                self._record_event("STOP_START" if new_state == self.STATE_STOPPED else "STOP_END",
+                                   end_entry)
             if self.stop_state_pub is not None:
                 try:
                     self.stop_state_pub.publish(Bool(data=new_state == self.STATE_STOPPED))
@@ -124,6 +131,30 @@ class StopDetector:
             return
         # Add anomaly hooks here without affecting current stop detection
         return
+
+    def _record_event(self, event_type, pose_entry):
+        """
+        Store STOP_START/STOP_END events with timestamp and planar position.
+
+        Args:
+            event_type: "STOP_START" or "STOP_END"
+            pose_entry: tuple (t, x, y) from pose_history
+        """
+        if pose_entry is None:
+            return
+        event = {
+            "type": event_type,
+            "t": float(pose_entry[0]),
+            "x": float(pose_entry[1]),
+            "y": float(pose_entry[2]),
+        }
+        self._events.append(event)
+        rospy.loginfo("[StopDetector] %s at t=%.2f (x=%.3f, y=%.3f)",
+                      event_type, event["t"], event["x"], event["y"])
+
+    def get_events(self):
+        """Return a copy of recorded stop events."""
+        return list(self._events)
 
 
 class TrackerNode:
@@ -265,6 +296,8 @@ class TrackerNode:
         self.logged_points = []
         self.smoothed_pose = None
         self.frame_number = 0  # Counter for frame numbers in trajectory
+        self.stop_detector = None
+        self.stop_event_start_index = 0
         rospy.on_shutdown(self._on_shutdown)
 
         # Validate parameters
@@ -289,6 +322,17 @@ class TrackerNode:
             rospy.logwarn("Camera info not received within timeout, continuing anyway...")
 
         rospy.loginfo("Tracker node initialized")
+
+    def register_stop_detector(self, stop_detector):
+        """
+        Attach a StopDetector to include its events in trajectory logs.
+
+        Args:
+            stop_detector: StopDetector instance
+        """
+        self.stop_detector = stop_detector
+        self.stop_event_start_index = len(stop_detector.get_events())
+        rospy.loginfo("StopDetector registered for trajectory logging")
 
     def _rpy_to_matrix(self, roll, pitch, yaw):
         """Convert roll, pitch, yaw to rotation matrix (Rz * Ry * Rx)."""
@@ -959,6 +1003,8 @@ class TrackerNode:
         self.logged_points = []
         self.frame_number = 0
         self.logging_active = True
+        if self.stop_detector is not None:
+            self.stop_event_start_index = len(self.stop_detector.get_events())
         return TriggerResponse(
             success=True,
             message="Logging started; writing to %s (%s)" % (self.log_file, self.log_format)
@@ -989,8 +1035,9 @@ class TrackerNode:
 
         try:
             if self.log_format == 'json':
+                payload = self._merge_points_and_events()
                 with open(log_file_expanded, 'w') as f:
-                    json.dump(self.logged_points, f, indent=2)
+                    json.dump(payload, f, indent=2)
             else:
                 with open(log_file_expanded, 'w') as f:
                     writer = csv.writer(f)
@@ -1010,6 +1057,68 @@ class TrackerNode:
         except Exception as e:
             rospy.logerr("Failed to save trajectory: %s", str(e))
             return False
+
+    def _merge_points_and_events(self):
+        """
+        Combine trajectory points with stop events for JSON logging.
+
+        Events are clipped to the time span of logged points and sorted by timestamp
+        so offline tools can iterate over a single list.
+        """
+        if self.stop_detector is None:
+            return list(self.logged_points)
+
+        stop_events = self._collect_stop_events()
+        if not stop_events:
+            return list(self.logged_points)
+
+        combined = list(self.logged_points) + stop_events
+        combined.sort(key=lambda item: item.get('t', 0.0))
+        rospy.loginfo("Attaching %d stop events to trajectory JSON", len(stop_events))
+        return combined
+
+    def _collect_stop_events(self):
+        """Return stop events recorded since logging started, clamped to logged time range."""
+        if self.stop_detector is None:
+            return []
+        events = self.stop_detector.get_events()
+        start_idx = min(self.stop_event_start_index, len(events))
+        relevant = events[start_idx:]
+        if not relevant or not self.logged_points:
+            return []
+
+        last_t = self.logged_points[-1].get('t', None)
+        output = []
+        for evt in relevant:
+            evt_type = evt.get('event') or evt.get('type')
+            if evt_type not in ("STOP_START", "STOP_END"):
+                continue
+            t_val = float(evt.get('t', 0.0))
+            if last_t is not None and t_val > last_t:
+                continue
+            output.append({
+                't': t_val,
+                'event': evt_type,
+                'x': float(evt.get('x', 0.0)),
+                'y': float(evt.get('y', 0.0)),
+            })
+        return output
+
+    def _build_stop_intervals(self, stop_events):
+        """Pair STOP_START/STOP_END events for visualization/logging helpers."""
+        intervals = []
+        start_evt = None
+        for evt in sorted(stop_events, key=lambda e: e.get('t', 0.0)):
+            if evt.get('event') == "STOP_START":
+                start_evt = evt
+            elif evt.get('event') == "STOP_END" and start_evt is not None:
+                intervals.append({
+                    'start': start_evt,
+                    'end': evt,
+                    'duration': max(0.0, evt.get('t', 0.0) - start_evt.get('t', 0.0))
+                })
+                start_evt = None
+        return intervals
 
     def _render_png(self, log_file_path):
         """Render a simple PNG of the trajectory."""
@@ -1036,6 +1145,27 @@ class TrackerNode:
             plt.plot(xs, ys, 'b-', alpha=0.8, label='trajectory')
             plt.scatter([xs[0]], [ys[0]], c='g', label='start')
             plt.scatter([xs[-1]], [ys[-1]], c='r', label='end')
+
+            stop_events = self._collect_stop_events()
+            if stop_events:
+                intervals = self._build_stop_intervals(stop_events)
+                start_pts = [(e['x'], e['y']) for e in stop_events if e['event'] == 'STOP_START']
+                end_pts = [(e['x'], e['y']) for e in stop_events if e['event'] == 'STOP_END']
+                if start_pts:
+                    xs_s, ys_s = zip(*start_pts)
+                    plt.scatter(xs_s, ys_s, c='red', s=45, edgecolors='k', label='STOP_START', zorder=5)
+                if end_pts:
+                    xs_e, ys_e = zip(*end_pts)
+                    plt.scatter(xs_e, ys_e, c='green', s=45, edgecolors='k', label='STOP_END', zorder=5)
+                for interval in intervals:
+                    mid_x = 0.5 * (interval['start']['x'] + interval['end']['x'])
+                    mid_y = 0.5 * (interval['start']['y'] + interval['end']['y'])
+                    plt.text(
+                        mid_x, mid_y, "%.1fs" % interval['duration'],
+                        fontsize=8, color='black',
+                        bbox=dict(facecolor='white', alpha=0.8, edgecolor='none'),
+                        zorder=6
+                    )
             plt.axis('equal')
             plt.grid(True)
             plt.legend()
@@ -1100,6 +1230,7 @@ def main():
     try:
         node = TrackerNode()
         stop_detector = StopDetector(pose_topic=node.pose_topic)
+        node.register_stop_detector(stop_detector)
         rospy.spin()
     except rospy.ROSInterruptException:
         pass

@@ -83,11 +83,17 @@ def read_json_trajectory(filename):
         data = json.load(f)
     
     if isinstance(data, list):
-        times = [item.get('t') for item in data]
-        x = [item.get('x') for item in data]
-        y = [item.get('y') for item in data]
-        theta = [item.get('theta') for item in data]
-        frames = [item.get('frame') for item in data] if any('frame' in item for item in data) else None
+        point_items = []
+        for item in data:
+            if isinstance(item, dict) and (item.get('event') or item.get('type')):
+                continue
+            point_items.append(item)
+
+        times = [item.get('t') for item in point_items]
+        x = [item.get('x') for item in point_items]
+        y = [item.get('y') for item in point_items]
+        theta = [item.get('theta') for item in point_items]
+        frames = [item.get('frame') for item in point_items] if any('frame' in item for item in point_items) else None
     elif isinstance(data, dict):
         if all(k in data for k in ['times', 'x', 'y', 'theta']):
             times = data['times']
