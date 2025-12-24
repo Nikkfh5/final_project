@@ -20,6 +20,12 @@ EXCESSIVE_STOP_SHORT_DURATION = 1.0  # s
 EXCESSIVE_STOP_COUNT_THRESHOLD = 3
 EXCESSIVE_STOP_WINDOW = 10.0  # s
 ORIENTATION_FLIP_THRESHOLD = math.pi / 2.0
+SPEED_ANOMALY_CONFIG = {
+    "v_spike": 1.5,  # m/s
+    "min_duration": 0.2,  # s
+    "smooth_window": 3,  # frames
+}
+SPEED_ANOMALY_COLOR = "#ff9800"
 
 EVENT_STYLE_MPL = {
     "TELEPORT": {"color": "black", "marker": "x", "size": 150, "label": "TELEPORT", "linewidth": 2.2},
@@ -168,8 +174,8 @@ def build_stop_intervals(stop_events):
     return intervals
 
 
-def build_timeline_segments(times, intervals):
-    """Build MOVING/STOPPED segments across the trajectory time span."""
+def build_timeline_segments(times, intervals, speed_intervals=None):
+    """Build MOVING/STOPPED timeline and overlay speed anomalies."""
     if not times:
         return []
     start_time, end_time = min(times), max(times)
@@ -186,9 +192,52 @@ def build_timeline_segments(times, intervals):
         current = seg_end
     if current < end_time:
         segments.append({"state": "MOVING", "start": current, "end": end_time})
+    speed_intervals = speed_intervals or []
+    if speed_intervals:
+        segments = overlay_speed_anomalies(segments, speed_intervals)
     for seg in segments:
         seg["duration"] = seg["end"] - seg["start"]
     return segments
+
+
+def overlay_speed_anomalies(segments, speed_intervals):
+    """Insert SPEED_ANOMALY segments into MOVING intervals without touching STOPPED."""
+    result = segments
+    for interval in speed_intervals:
+        iv_start = interval["start_time"]
+        iv_end = interval["end_time"]
+        updated = []
+        for seg in result:
+            if seg["end"] <= iv_start or seg["start"] >= iv_end:
+                updated.append(seg)
+                continue
+            if seg["state"] != "MOVING":
+                updated.append(seg)
+                continue
+            # Split moving segment around anomaly interval
+            if seg["start"] < iv_start:
+                updated.append({"state": "MOVING", "start": seg["start"], "end": iv_start})
+            overlap_start = max(seg["start"], iv_start)
+            overlap_end = min(seg["end"], iv_end)
+            updated.append({"state": "SPEED_ANOMALY", "start": overlap_start, "end": overlap_end})
+            if overlap_end < seg["end"]:
+                updated.append({"state": "MOVING", "start": overlap_end, "end": seg["end"]})
+        result = _merge_adjacent_segments(updated)
+    return result
+
+
+def _merge_adjacent_segments(segments):
+    """Merge contiguous segments with the same state."""
+    if not segments:
+        return []
+    merged = [segments[0]]
+    for seg in segments[1:]:
+        prev = merged[-1]
+        if seg["state"] == prev["state"] and abs(seg["start"] - prev["end"]) < 1e-9:
+            prev["end"] = seg["end"]
+        else:
+            merged.append(seg)
+    return merged
 
 
 def is_stopped_at(time_value, intervals):
@@ -197,6 +246,32 @@ def is_stopped_at(time_value, intervals):
         if interval["start"]["t"] <= time_value <= interval["end"]["t"]:
             return True
     return False
+
+
+def moving_average(values, window):
+    """Simple moving average with 'same' length output."""
+    window = max(int(window or 1), 1)
+    if window == 1 or len(values) == 0:
+        return np.asarray(values, dtype=float)
+    kernel = np.ones(window, dtype=float) / float(window)
+    return np.convolve(values, kernel, mode="same")
+
+
+def is_speed_anomaly_at(time_value, intervals):
+    """Return True if time_value is inside any speed anomaly interval."""
+    for interval in intervals:
+        if interval["start_time"] <= time_value <= interval["end_time"]:
+            return True
+    return False
+
+
+def motion_color(time_value, stop_intervals, speed_intervals):
+    """Return color for animation/timeline based on stop and speed anomaly intervals."""
+    if is_stopped_at(time_value, stop_intervals):
+        return "red"
+    if is_speed_anomaly_at(time_value, speed_intervals):
+        return SPEED_ANOMALY_COLOR
+    return "green"
 
 
 def detect_teleports(points, v_threshold):
@@ -223,6 +298,165 @@ def detect_teleports(points, v_threshold):
                 }
             )
     return teleports
+
+
+def detect_speed_anomalies(points, teleports, config):
+    """
+    Detect sustained high-speed intervals excluding teleports.
+
+    Args:
+        points: List of trajectory points.
+        teleports: Teleport events (used to exclude those segments).
+        config: Dict with v_spike, min_duration, smooth_window.
+
+    Returns:
+        (events, intervals, smooth_speeds)
+        events: list of SPEED_ANOMALY_START/END events
+        intervals: list of interval descriptors for rendering/reporting
+        smooth_speeds: numpy array of smoothed speeds per segment
+    """
+    if len(points) < 2:
+        return [], [], np.array([])
+
+    times = [float(p.get("t", 0.0)) for p in points]
+    xs = [float(p.get("x", 0.0)) for p in points]
+    ys = [float(p.get("y", 0.0)) for p in points]
+
+    # Map times to point indices for teleport lookup
+    time_to_indices = {}
+    for idx, t_val in enumerate(times):
+        key = round(t_val, 6)
+        time_to_indices.setdefault(key, []).append(idx)
+
+    teleport_segments = set()
+    for tp in teleports or []:
+        tp_time = round(float(tp.get("t", 0.0)), 6)
+        for idx in time_to_indices.get(tp_time, []):
+            if idx > 0:
+                teleport_segments.add(idx - 1)  # segment leading to teleport point
+
+    raw_speeds = []
+    segments = []
+    for i in range(len(points) - 1):
+        dt = times[i + 1] - times[i]
+        dx = xs[i + 1] - xs[i]
+        dy = ys[i + 1] - ys[i]
+        speed = math.hypot(dx, dy) / dt if dt > MIN_DT else 0.0
+        is_tp = i in teleport_segments
+        # Exclude teleports from smoothing to avoid contaminating neighbors
+        raw_speeds.append(0.0 if is_tp else speed)
+        segments.append(
+            {
+                "segment_idx": i,
+                "dt": max(dt, 0.0),
+                "start_idx": i,
+                "end_idx": i + 1,
+                "start_time": times[i],
+                "end_time": times[i + 1],
+                "speed": speed,
+                "is_teleport": is_tp,
+            }
+        )
+
+    smooth_speeds = moving_average(raw_speeds, config.get("smooth_window", 1))
+
+    events = []
+    intervals = []
+
+    active_start = None
+    active_last = None
+    active_duration = 0.0
+    active_max_speed = 0.0
+
+    for i, segment in enumerate(segments):
+        v_smooth = float(smooth_speeds[i]) if len(smooth_speeds) > i else float(segment["speed"])
+        segment["v_smooth"] = v_smooth
+        is_candidate = (
+            segment["dt"] > 0.0
+            and not segment["is_teleport"]
+            and v_smooth > config.get("v_spike", 0.0)
+        )
+
+        if is_candidate:
+            if active_start is None:
+                active_start = i
+                active_duration = segment["dt"]
+                active_max_speed = v_smooth
+            else:
+                active_duration += segment["dt"]
+                active_max_speed = max(active_max_speed, v_smooth)
+            active_last = i
+        else:
+            if active_start is not None:
+                if active_duration >= config.get("min_duration", 0.0):
+                    start_seg = segments[active_start]
+                    end_seg = segments[active_last]
+                    interval = {
+                        "start_point_idx": start_seg["start_idx"],
+                        "end_point_idx": end_seg["end_idx"],
+                        "start_time": start_seg["start_time"],
+                        "end_time": end_seg["end_time"],
+                        "duration": active_duration,
+                        "max_speed": active_max_speed,
+                        "start_speed": start_seg["v_smooth"],
+                    }
+                    intervals.append(interval)
+                    events.append(
+                        {
+                            "event": "SPEED_ANOMALY_START",
+                            "t": interval["start_time"],
+                            "x": xs[interval["start_point_idx"]],
+                            "y": ys[interval["start_point_idx"]],
+                            "speed": interval["start_speed"],
+                        }
+                    )
+                    events.append(
+                        {
+                            "event": "SPEED_ANOMALY_END",
+                            "t": interval["end_time"],
+                            "duration": interval["duration"],
+                            "max_speed": interval["max_speed"],
+                        }
+                    )
+                active_start = None
+                active_last = None
+                active_duration = 0.0
+                active_max_speed = 0.0
+
+    # Close final interval if needed
+    if active_start is not None and active_last is not None and active_duration >= config.get("min_duration", 0.0):
+        start_seg = segments[active_start]
+        end_seg = segments[active_last]
+        interval = {
+            "start_point_idx": start_seg["start_idx"],
+            "end_point_idx": end_seg["end_idx"],
+            "start_time": start_seg["start_time"],
+            "end_time": end_seg["end_time"],
+            "duration": active_duration,
+            "max_speed": active_max_speed,
+            "start_speed": start_seg["v_smooth"],
+        }
+        intervals.append(interval)
+        events.append(
+            {
+                "event": "SPEED_ANOMALY_START",
+                "t": interval["start_time"],
+                "x": xs[interval["start_point_idx"]],
+                "y": ys[interval["start_point_idx"]],
+                "speed": interval["start_speed"],
+            }
+        )
+        events.append(
+            {
+                "event": "SPEED_ANOMALY_END",
+                "t": interval["end_time"],
+                "duration": interval["duration"],
+                "max_speed": interval["max_speed"],
+            }
+        )
+
+    events.sort(key=lambda e: e["t"])
+    return events, intervals, smooth_speeds
 
 
 def compute_quality_metrics(points, stop_intervals, teleports):
@@ -452,6 +686,28 @@ def plot_event_markers(ax, events, event_type):
     )
 
 
+def plot_speed_anomaly_segments(ax, xs, ys, intervals):
+    """Overlay speed anomaly segments as thick orange lines."""
+    if not intervals:
+        return
+    labeled = False
+    for iv in intervals:
+        start_idx = max(0, int(iv["start_point_idx"]))
+        end_idx = min(int(iv["end_point_idx"]), len(xs) - 1)
+        if end_idx <= start_idx:
+            continue
+        ax.plot(
+            xs[start_idx : end_idx + 1],
+            ys[start_idx : end_idx + 1],
+            color=SPEED_ANOMALY_COLOR,
+            linewidth=4.0,
+            solid_capstyle="round",
+            label="SPEED_ANOMALY" if not labeled else None,
+            zorder=7,
+        )
+        labeled = True
+
+
 def add_plotly_events(fig, events, event_type, row, col):
     """Add plotly scatter for teleports/anomalies."""
     style = EVENT_STYLE_PLOTLY.get(event_type)
@@ -484,6 +740,39 @@ def add_plotly_events(fig, events, event_type, row, col):
         row=row,
         col=col,
     )
+
+
+def add_plotly_speed_anomalies(fig, intervals, xs, ys, row, col):
+    """Add orange line overlays for speed anomaly intervals."""
+    if not intervals:
+        return
+    for idx, iv in enumerate(intervals):
+        start_idx = max(0, int(iv["start_point_idx"]))
+        end_idx = min(int(iv["end_point_idx"]), len(xs) - 1)
+        if end_idx <= start_idx:
+            continue
+        seg_x = xs[start_idx : end_idx + 1]
+        seg_y = ys[start_idx : end_idx + 1]
+        hover = (
+            "SPEED_ANOMALY<br>"
+            f"start: {iv['start_time']:.2f}s<br>"
+            f"end: {iv['end_time']:.2f}s<br>"
+            f"duration: {iv['duration']:.2f}s<br>"
+            f"max speed: {iv['max_speed']:.2f} m/s"
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=seg_x,
+                y=seg_y,
+                mode="lines",
+                line=dict(color=SPEED_ANOMALY_COLOR, width=6),
+                name="SPEED_ANOMALY" if idx == 0 else None,
+                hoverinfo="text",
+                text=[hover] * len(seg_x),
+            ),
+            row=row,
+            col=col,
+        )
 
 
 # === Paths ===
@@ -588,8 +877,11 @@ existing_teleports = [e for e in events if e["event"] == "TELEPORT"]
 teleports_detected = detect_teleports(points, TELEPORT_SPEED_THRESHOLD)
 teleports_for_detection = merge_events(existing_teleports, teleports_detected)
 anomalies_detected = detect_behavioral_anomalies(points, stop_intervals, teleports_for_detection)
+speed_anomaly_events_detected, speed_anomaly_intervals, _speed_smooth = detect_speed_anomalies(
+    points, teleports_for_detection, SPEED_ANOMALY_CONFIG
+)
 
-events = merge_events(events, teleports_detected + anomalies_detected)
+events = merge_events(events, teleports_detected + anomalies_detected + speed_anomaly_events_detected)
 stop_events = [e for e in events if e["event"] in ("STOP_START", "STOP_END")]
 teleports = [e for e in events if e["event"] == "TELEPORT"]
 anomaly_events = [e for e in events if str(e.get("event", "")).startswith("ANOMALY_")]
@@ -598,7 +890,11 @@ for evt in anomaly_events:
     anomalies_by_type.setdefault(evt["event"], []).append(evt)
 
 stop_intervals = build_stop_intervals(stop_events)
-timeline_segments = build_timeline_segments([p.get("t", 0.0) for p in points], stop_intervals)
+timeline_segments = build_timeline_segments(
+    [p.get("t", 0.0) for p in points],
+    stop_intervals,
+    speed_anomaly_intervals,
+)
 start_events = [e for e in stop_events if e["event"] == "STOP_START"]
 end_events = [e for e in stop_events if e["event"] == "STOP_END"]
 interval_by_start = {iv["start"]["t"]: iv for iv in stop_intervals}
@@ -611,6 +907,8 @@ theta = [p.get("theta", 0.0) for p in points]
 frame = [p.get("frame", idx) for idx, p in enumerate(points)]
 
 quality_metrics = compute_quality_metrics(points, stop_intervals, teleports)
+speed_anomaly_count = len(speed_anomaly_intervals)
+max_speed_anomaly = max((iv["max_speed"] for iv in speed_anomaly_intervals), default=0.0)
 
 print(f"[INFO] Loaded {len(points)} trajectory points from {TRAJECTORY_JSON}")
 if stop_intervals:
@@ -623,6 +921,8 @@ if anomaly_events:
         counts_by_type[evt["event"]] = counts_by_type.get(evt["event"], 0) + 1
     summary_parts = [f"{k}={v}" for k, v in counts_by_type.items()]
     print(f"[INFO] Behavioral anomalies: {', '.join(summary_parts)}")
+print(f"[INFO] Speed anomalies detected: {speed_anomaly_count}")
+print(f"[INFO] Max speed anomaly: {max_speed_anomaly:.3f} m/s")
 print(
     "[INFO] Tracking quality — duration: {:.2f}s, distance: {:.2f} m, avg speed: {:.3f} m/s, max speed: {:.3f} m/s".format(
         quality_metrics["total_duration"],
@@ -635,7 +935,7 @@ print(
 augmented_payload = build_augmented_payload(raw_data, trajectory_points, events)
 with open(TRAJECTORY_JSON, "w") as f:
     json.dump(augmented_payload, f, indent=2)
-print(f"[INFO] trajectory.json updated with {len(events)} events (including teleports/anomalies)")
+print(f"[INFO] trajectory.json updated with {len(events)} events (including teleports/anomalies/speed anomalies)")
 
 speeds = []
 
@@ -702,6 +1002,9 @@ if args.html:
         col=1,
     )
 
+    if speed_anomaly_intervals:
+        add_plotly_speed_anomalies(fig_html, speed_anomaly_intervals, x, y, 1, 1)
+
     if start_events:
         hover_text = []
         for evt in start_events:
@@ -767,8 +1070,9 @@ if args.html:
     timeline = timeline_segments if timeline_segments else [
         {"state": "MOVING", "start": t_min, "end": t_axis_max, "duration": t_span}
     ]
+    timeline_colors = {"STOPPED": "red", "MOVING": "green", "SPEED_ANOMALY": SPEED_ANOMALY_COLOR}
     for seg in timeline:
-        color = "red" if seg["state"] == "STOPPED" else "green"
+        color = timeline_colors.get(seg["state"], "green")
         fig_html.add_trace(
             go.Scatter(
                 x=[seg["start"], seg["end"]],
@@ -811,7 +1115,7 @@ if args.html_anim:
     for i in range(len(x)):
         x0, y0 = x[i], y[i]
         th = theta[i]
-        state_color = "red" if is_stopped_at(t[i], stop_intervals) else "green"
+        state_color = motion_color(t[i], stop_intervals, speed_anomaly_intervals)
 
         # Конец линии (чуть не до самой вершины, чтобы не выглядело странно)
         x1 = x0 + (ARROW_LEN - HEAD_LEN) * math.cos(th)
@@ -864,7 +1168,7 @@ if args.html_anim:
             )
         )
 
-    initial_color = "red" if is_stopped_at(t[0], stop_intervals) else "green"
+    initial_color = motion_color(t[0], stop_intervals, speed_anomaly_intervals)
     fig_html = go.Figure(
         data=[
             # 0 — траектория
@@ -1060,6 +1364,7 @@ if args.time_color:
     plot_event_markers(ax_tc, teleports, "TELEPORT")
     for evt_type, evt_list in anomalies_by_type.items():
         plot_event_markers(ax_tc, evt_list, evt_type)
+    plot_speed_anomaly_segments(ax_tc, x, y, speed_anomaly_intervals)
 
     ax_tc.set_title("Trajectory colored by time")
     ax_tc.set_xlabel("X (m)")
@@ -1105,6 +1410,7 @@ if args.speed_color:
     plot_event_markers(ax_sc, teleports, "TELEPORT")
     for evt_type, evt_list in anomalies_by_type.items():
         plot_event_markers(ax_sc, evt_list, evt_type)
+    plot_speed_anomaly_segments(ax_sc, x, y, speed_anomaly_intervals)
 
     ax_sc.set_title("Trajectory colored by speed")
     ax_sc.set_xlabel("X (m)")
@@ -1137,6 +1443,7 @@ plot_stop_annotations(ax, stop_events, stop_intervals)
 plot_event_markers(ax, teleports, "TELEPORT")
 for evt_type, evt_list in anomalies_by_type.items():
     plot_event_markers(ax, evt_list, evt_type)
+plot_speed_anomaly_segments(ax, x, y, speed_anomaly_intervals)
 
 ax.set_title("Robot trajectory")
 ax.set_xlabel("X (m)")
@@ -1162,7 +1469,16 @@ def on_add(sel):
     )
     sel.annotation.get_bbox_patch().set(alpha=0.9)
     
-def build_report_html(points, stop_intervals, timeline_segments, teleports, anomalies, quality_metrics, output_path):
+def build_report_html(
+    points,
+    stop_intervals,
+    timeline_segments,
+    teleports,
+    anomalies,
+    speed_anomalies,
+    quality_metrics,
+    output_path,
+):
     """Compose a single-page HTML report with trajectory, quality, and anomaly analysis."""
     xs = [p.get("x", 0.0) for p in points]
     ys = [p.get("y", 0.0) for p in points]
@@ -1174,6 +1490,10 @@ def build_report_html(points, stop_intervals, timeline_segments, teleports, anom
     stop_count = quality_metrics.get("stop_count", len(stop_intervals))
     total_stopped = sum(iv["duration"] for iv in stop_intervals)
     teleport_count = quality_metrics.get("teleport_count", len(teleports))
+    speed_anomalies = speed_anomalies or []
+    speed_anomaly_count = len(speed_anomalies)
+    speed_anomaly_total = sum(iv.get("duration", 0.0) for iv in speed_anomalies)
+    speed_anomaly_max = max((iv.get("max_speed", 0.0) for iv in speed_anomalies), default=0.0)
     anomaly_count = len(anomalies)
     v_avg = quality_metrics.get("avg_speed", 0.0)
     v_max = quality_metrics.get("max_speed", 0.0)
@@ -1192,7 +1512,12 @@ def build_report_html(points, stop_intervals, timeline_segments, teleports, anom
         segs = []
         for seg in timeline_segments:
             width_pct = max(1.5, 100.0 * seg["duration"] / span)
-            css_class = "stop" if seg["state"] == "STOPPED" else "move"
+            if seg["state"] == "STOPPED":
+                css_class = "stop"
+            elif seg["state"] == "SPEED_ANOMALY":
+                css_class = "speed"
+            else:
+                css_class = "move"
             segs.append(f'<div class="seg {css_class}" style="width:{width_pct:.2f}%"></div>')
         return '<div class="timeline">' + "".join(segs) + "</div>"
 
@@ -1223,6 +1548,19 @@ def build_report_html(points, stop_intervals, timeline_segments, teleports, anom
     )
     if not teleport_rows:
         teleport_rows = '<tr><td colspan="6">No teleports detected.</td></tr>'
+
+    speed_rows = "".join(
+        "<tr>"
+        f"<td>{idx}</td>"
+        f"<td>{iv.get('start_time', 0.0):.2f}</td>"
+        f"<td>{iv.get('end_time', 0.0):.2f}</td>"
+        f"<td>{iv.get('duration', 0.0):.2f}</td>"
+        f"<td>{iv.get('max_speed', 0.0):.2f}</td>"
+        "</tr>"
+        for idx, iv in enumerate(speed_anomalies, 1)
+    )
+    if not speed_rows:
+        speed_rows = '<tr><td colspan="5">No speed anomalies detected.</td></tr>'
 
     anomaly_rows = "".join(
         "<tr>"
@@ -1325,6 +1663,9 @@ def build_report_html(points, stop_intervals, timeline_segments, teleports, anom
     .timeline .stop {{
       background: #e57373;
     }}
+    .timeline .speed {{
+      background: {SPEED_ANOMALY_COLOR};
+    }}
     .wide {{
       grid-column: 1 / -1;
     }}
@@ -1368,6 +1709,7 @@ def build_report_html(points, stop_intervals, timeline_segments, teleports, anom
     Avg speed: <b>{v_avg:.3f} m/s</b> &nbsp;|&nbsp;
     Max speed: <b>{v_max:.3f} m/s</b> &nbsp;|&nbsp;
     Teleports: <b>{teleport_count}</b> &nbsp;|&nbsp;
+    Speed anomalies: <b>{speed_anomaly_count}</b> &nbsp;|&nbsp;
     Anomalies: <b>{anomaly_count}</b>
   </div>
 
@@ -1433,6 +1775,23 @@ def build_report_html(points, stop_intervals, timeline_segments, teleports, anom
     </div>
 
     <div class="card wide">
+      <h2>Speed Anomalies</h2>
+      <div class="stats">
+        <div class="item"><strong>{speed_anomaly_count}</strong><span>Count</span></div>
+        <div class="item"><strong>{speed_anomaly_total:.2f}s</strong><span>Total duration</span></div>
+        <div class="item"><strong>{speed_anomaly_max:.3f} m/s</strong><span>Max speed</span></div>
+      </div>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Start (s)</th><th>End (s)</th><th>Duration (s)</th><th>Max speed (m/s)</th></tr>
+        </thead>
+        <tbody>
+          {speed_rows}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card wide">
       <h2>Teleports</h2>
       <table>
         <thead>
@@ -1461,7 +1820,7 @@ def build_report_html(points, stop_intervals, timeline_segments, teleports, anom
     <div class="card wide">
       <h2>Timeline</h2>
       {render_timeline()}
-      <div class="small">Green = MOVING, Red = STOPPED</div>
+      <div class="small">Green = MOVING, Red = STOPPED, Orange = SPEED ANOMALY</div>
     </div>
   </div>
 </body>
@@ -1490,6 +1849,7 @@ if args.report:
         timeline_segments,
         teleports,
         anomaly_events,
+        speed_anomaly_intervals,
         quality_metrics,
         REPORT_HTML,
     )
